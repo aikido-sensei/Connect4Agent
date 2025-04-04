@@ -18,14 +18,3 @@ pip install -r requirements.txt
 ```bash
 python connect4.py
 ```
-
-2. Game Rules:
-- Two players take turns dropping their pieces (red and yellow) into the board
-- The first player to connect four of their pieces horizontally, vertically, or diagonally wins
-- Players can drop their pieces by clicking on the desired column
-- The piece will fall to the lowest available spot in the selected column
-
-## Controls
-- Click on any column to drop your piece
-- Move your mouse to see where your piece will be placed
-- Close the window to exit the game 
