@@ -1,8 +1,8 @@
 import pygame
 import sys
 import numpy as np
-import random
-from agent import Agent
+from connect4_agent import Connect4Agent
+import torch
 
 # Initialize Pygame
 pygame.init()
@@ -32,7 +32,6 @@ MENU = 0
 PLAYING = 1
 GAME_OVER = 2
 
-# Initialize game board
 def create_board():
     return np.zeros((6, 7))
 
@@ -46,32 +45,7 @@ def get_next_open_row(board, col):
     for r in range(5, -1, -1):
         if board[r][col] == 0:
             return r
-    return -1  # Return -1 if column is full
-
-def winning_move(board, piece):
-    # Check horizontal locations
-    for c in range(4):
-        for r in range(6):
-            if board[r][c] == piece and board[r][c+1] == piece and board[r][c+2] == piece and board[r][c+3] == piece:
-                return True
-
-    # Check vertical locations
-    for c in range(7):
-        for r in range(3):
-            if board[r][c] == piece and board[r+1][c] == piece and board[r+2][c] == piece and board[r+3][c] == piece:
-                return True
-
-    # Check positively sloped diagonals
-    for c in range(4):
-        for r in range(3):
-            if board[r][c] == piece and board[r+1][c+1] == piece and board[r+2][c+2] == piece and board[r+3][c+3] == piece:
-                return True
-
-    # Check negatively sloped diagonals
-    for c in range(4):
-        for r in range(3, 6):
-            if board[r][c] == piece and board[r-1][c+1] == piece and board[r-2][c+2] == piece and board[r-3][c+3] == piece:
-                return True
+    return -1
 
 def draw_board(board):
     # Draw the board background
@@ -116,10 +90,10 @@ def draw_game_over(winner, board):
     # Draw the final board state
     draw_board(board)
     
-    # Create a semi-transparent overlay for the board (not covering the top)
+    # Create a semi-transparent overlay
     overlay = pygame.Surface((width, height - SQUARESIZE), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 128))  # Black with 50% opacity
-    screen.blit(overlay, (0, SQUARESIZE))  # Start overlay after the top row
+    overlay.fill((0, 0, 0, 128))
+    screen.blit(overlay, (0, SQUARESIZE))
     
     # Draw winner message
     if winner == 0:
@@ -129,7 +103,7 @@ def draw_game_over(winner, board):
     win_text = game_font.render(message, 1, RED if winner == 1 else YELLOW)
     screen.blit(win_text, (width//2 - win_text.get_width()//2, SQUARESIZE + 50))
     
-    # Draw menu button at the top
+    # Draw menu button
     menu_button = pygame.Rect(width//2 - 150, 20, 300, 60)
     pygame.draw.rect(screen, GRAY, menu_button)
     menu_text = pygame.font.SysFont("monospace", 40).render("BACK TO MENU", 1, WHITE)
@@ -138,22 +112,17 @@ def draw_game_over(winner, board):
     pygame.display.update()
     return menu_button
 
-def get_valid_moves(board):
-    valid_moves = []
-    for col in range(7):
-        if is_valid_location(board, col):
-            valid_moves.append(col)
-    return valid_moves
-
-def make_agent_move(board):
-    valid_moves = get_valid_moves(board)
-    if valid_moves:
-        return random.choice(valid_moves)
-    return -1
-
 # Set up the display
 screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Connect 4")
+
+# Load the trained agent
+agent = Connect4Agent(num_simulations=100)
+try:
+    agent.model.load_state_dict(torch.load('models/model_latest.pth'))
+    print("Loaded trained model successfully!")
+except:
+    print("No trained model found, using untrained model")
 
 # Game state variables
 game_state = MENU
@@ -162,7 +131,6 @@ game_over = False
 turn = 0
 winner = 0
 vs_agent = False
-agent = Agent()  # Create agent instance
 
 # Main game loop
 while True:
@@ -195,26 +163,37 @@ while True:
     elif game_state == PLAYING:
         # Handle agent's turn if playing against agent
         if vs_agent and turn == 1:
-            pygame.time.wait(agent.get_delay())  # Use agent's delay
-            col = agent.make_move(board)
-            if col != -1:
-                row = agent.get_next_open_row(board, col)
-                drop_piece(board, row, col, 2)
-                
-                # Check for win
-                if winning_move(board, 2):
-                    winner = 2
-                    game_state = GAME_OVER
-                elif np.all(board != 0):  # Check for tie
-                    winner = 0
-                    game_state = GAME_OVER
-                
-                if game_state == PLAYING:
-                    draw_board(board)
-                    turn += 1
-                    turn = turn % 2
+            pygame.time.wait(500)  # Fixed 500ms delay for better UX
+            
+            # Get agent's move using MCTS
+            action_probs = agent.get_action_probs(board, 2, temperature=0.5)  # Pass numpy array directly
+            col = np.argmax(action_probs)
+            
+            # Ensure move is valid
+            if not is_valid_location(board, col):
+                valid_moves = [c for c in range(7) if is_valid_location(board, c)]
+                if valid_moves:
+                    col = valid_moves[0]
                 else:
-                    menu_button = draw_game_over(winner, board)
+                    continue
+                    
+            row = get_next_open_row(board, col)
+            drop_piece(board, row, col, 2)
+            
+            # Check for win
+            if agent.winning_move(board, 2):
+                winner = 2
+                game_state = GAME_OVER
+            elif len([col for col in range(7) if is_valid_location(board, col)]) == 0:
+                winner = 0
+                game_state = GAME_OVER
+            
+            if game_state == PLAYING:
+                draw_board(board)
+                turn += 1
+                turn = turn % 2
+            else:
+                menu_button = draw_game_over(winner, board)
             continue
 
         for event in pygame.event.get():
@@ -234,36 +213,31 @@ while True:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARESIZE))
                 
-                # Get the column from mouse position
                 posx = event.pos[0]
                 col = int(posx/SQUARESIZE)
 
                 if col < 0 or col > 6:
-                    continue  # Skip if clicked outside the board
+                    continue
 
-                # Get the next open row from bottom
                 row = get_next_open_row(board, col)
+                if row == -1:
+                    continue
                 
-                if row == -1:  # Column is full
-                    continue  # Skip the turn if column is full
-                
-                # Drop the piece
                 piece = 1 if turn == 0 else 2
                 drop_piece(board, row, col, piece)
 
-                # Check for win
-                if winning_move(board, piece):
+                if agent.winning_move(board, piece):
                     winner = piece
                     game_state = GAME_OVER
-                elif np.all(board != 0):  # Check for tie
+                elif len([col for col in range(7) if is_valid_location(board, col)]) == 0:
                     winner = 0
                     game_state = GAME_OVER
 
-                if game_state == PLAYING:  # Only update turn if game is still going
+                if game_state == PLAYING:
                     draw_board(board)
                     turn += 1
                     turn = turn % 2
-                else:  # If game is over, show the game over screen
+                else:
                     menu_button = draw_game_over(winner, board)
 
     elif game_state == GAME_OVER:

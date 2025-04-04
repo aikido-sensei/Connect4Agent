@@ -1,6 +1,6 @@
 # Connect 4 Game
 
-A simple implementation of the classic Connect 4 game with a graphical user interface using Pygame.
+A reinforcement learning agent based on AlphaGo zero to play the Connect 4 game.
 
 ## Requirements
 - Python 3.x
