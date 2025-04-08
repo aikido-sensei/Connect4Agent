@@ -60,17 +60,21 @@ def play_self_play_game(agent, temperature=1.0):
     """Play a self-play game and return game history"""
     board = create_board()
     game_history = []
-    current_player = 1
+    current_player = random.choice([1, 2])  # Randomly choose starting player
+    move_count = 0
     
     while True:
         # Get action probabilities from MCTS
         action_probs = agent.get_action_probs(board, current_player, temperature)
+        move_count += 1
         
         # Store state and probabilities
         game_history.append({
             'state': board.copy(),
             'current_player': current_player,
-            'policy': action_probs
+            'policy': action_probs,
+            'move_number': move_count,
+            'value': 0  # Initialize value to 0
         })
         
         # Select action
@@ -86,9 +90,9 @@ def play_self_play_game(agent, temperature=1.0):
         # Make move
         row = get_next_open_row(board, action)
         if row == -1:  # Invalid move
-            # Set draw value for invalid move
+            # Penalize invalid moves heavily
             for history in game_history:
-                history['value'] = 0.0
+                history['value'] = -1.0 if history['current_player'] == current_player else 1.0
             return game_history
             
         drop_piece(board, row, action, current_player)
@@ -99,19 +103,26 @@ def play_self_play_game(agent, temperature=1.0):
         
         if agent.winning_move(board, current_player):
             game_over = True
-            value = 1.0
+            # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)
+            progress = move_count / 42  # How far into the game are we
+            value = 1.0 - progress * 0.7  # Decrease reward for longer games
         elif is_draw(board):
             game_over = True
-            value = 0.0
-            
+            value = 0  # Draws are neutral
+        
         if game_over:
-            # Add final game value to all states
+            # Update values for all positions in the game
             for history in game_history:
-                # Value is from the perspective of the player at that state
                 if history['current_player'] == current_player:
-                    history['value'] = value
+                    if value == 0:  # Draw
+                        history['value'] = value  # Both players get 0 for draw
+                    else:
+                        history['value'] = value  # Winner gets positive value
                 else:
-                    history['value'] = -value
+                    if value == 0:  # Draw
+                        history['value'] = value  # Both players get 0 for draw
+                    else:
+                        history['value'] = -value  # Loser gets negative of winner's value
             return game_history
         
         current_player = 3 - current_player  # Switch players (1 -> 2 or 2 -> 1)
@@ -121,6 +132,7 @@ def train_network(agent, game_histories, batch_size=32):
     # Flatten game histories
     training_data = []
     for game in game_histories:
+        # Include all positions, including draws
         for history in game:
             training_data.append(history)
     
@@ -128,12 +140,24 @@ def train_network(agent, game_histories, batch_size=32):
     if len(training_data) < batch_size:
         return None
     
-    # Sample batch
-    batch = random.sample(training_data, batch_size)
+    # Sort by absolute value to prioritize decisive positions
+    training_data.sort(key=lambda x: abs(x['value']), reverse=True)
     
-    # Prepare training data
-    states = np.array([history['state'] for history in batch])
-    states = states.reshape(-1, 1, 6, 7)  # Reshape to (batch_size, channels, height, width)
+    # Take top 75% of positions
+    training_data = training_data[:int(len(training_data) * 0.75)]
+    
+    # Sample batch from remaining good positions
+    batch = random.sample(training_data, min(batch_size, len(training_data)))
+    
+    # Prepare training data with 2 channels
+    states = []
+    for history in batch:
+        board_tensor = history['state']
+        player_plane = np.full_like(board_tensor, float(history['current_player'] == 1))
+        state = np.stack([board_tensor, player_plane])  # Stack along channel dimension
+        states.append(state)
+    
+    states = np.array(states)
     policies = np.array([history['policy'] for history in batch])
     values = np.array([history['value'] for history in batch])
     
@@ -142,7 +166,7 @@ def train_network(agent, game_histories, batch_size=32):
 
 def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0):
     """Main training loop following AlphaGo Zero methodology"""
-    current_agent = Connect4Agent(num_simulations=25)  # 25 simulations is more appropriate for Connect 4
+    current_agent = Connect4Agent(num_simulations=100, c_puct=2.0)  # More simulations and higher exploration
     
     # Pool of previous best models (max size 5)
     model_pool = []
@@ -181,17 +205,17 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
         for episode in tqdm(range(num_episodes), desc="Self-play games"):
             # More gradual temperature annealing
             progress = episode / num_episodes
-            if progress < 0.9:  # Keep high temperature for 90% of episodes
+            if progress < 0.8:  # Keep high temperature for 80% of episodes
                 temp = temperature
             else:
-                # Gradually decrease temperature in last 10% of episodes
-                temp = temperature * (1 - (progress - 0.9) / 0.1)
-                temp = max(0.1, temp)  # Don't go below 0.1
+                # Gradually decrease temperature in last 20% of episodes
+                temp = temperature * (1 - (progress - 0.8) / 0.2)
+                temp = max(0.5, temp)  # Don't go below 0.5 to maintain some exploration
             
             # 50% chance to play against a previous model if available
-            if model_pool and random.random() < 0.5:
+            if model_pool and random.random() < 0.70:
                 # Create opponent agent and load random previous model
-                opponent = Connect4Agent(num_simulations=25)  # Same number of simulations for opponent
+                opponent = Connect4Agent(num_simulations=100, c_puct=2.0)  # Same settings for opponent
                 opponent_state = random.choice(model_pool)
                 opponent.load_state_dict(opponent_state)
                 game_history = play_game(current_agent, opponent, temp)
@@ -203,18 +227,12 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
             
             # Count game outcomes
             final_state = game_history[-1]
-            if final_state['value'] == 0:
+            if final_state['value'] == 0:  # Draw
                 draws += 1
-            elif final_state['value'] == 1:  # Current player won
-                if final_state['current_player'] == 1:
-                    wins += 1
-                else:
-                    losses += 1
-            else:  # value == -1, current player lost
-                if final_state['current_player'] == 1:
-                    losses += 1
-                else:
-                    wins += 1
+            elif final_state['value'] > 0:  # Win
+                wins += 1
+            else:  # Loss
+                losses += 1
         
         # Calculate statistics
         total_games = wins + losses + draws
@@ -299,11 +317,13 @@ def play_game(agent1, agent2, temperature=1.0):
     """Play a game between two agents"""
     board = create_board()
     game_history = []
-    current_player = 1
+    current_player = random.choice([1, 2])  # Randomly choose starting player
+    move_count = 0
     
     while True:
         # Get current state
         state = board.copy()
+        move_count += 1
         
         # Get action probabilities from current player's agent
         current_agent = agent1 if current_player == 1 else agent2
@@ -313,7 +333,9 @@ def play_game(agent1, agent2, temperature=1.0):
         game_history.append({
             'state': state.copy(),
             'current_player': current_player,
-            'policy': action_probs
+            'policy': action_probs,
+            'move_number': move_count,
+            'value': 0  # Initialize value to 0
         })
         
         # Select action
@@ -329,9 +351,9 @@ def play_game(agent1, agent2, temperature=1.0):
         # Make move
         row = get_next_open_row(board, action)
         if row == -1:  # Invalid move
-            # Set draw value for invalid move
+            # Penalize invalid moves heavily
             for history in game_history:
-                history['value'] = 0.0
+                history['value'] = -1.0 if history['current_player'] == current_player else 1.0
             return game_history
             
         drop_piece(board, row, action, current_player)
@@ -342,29 +364,36 @@ def play_game(agent1, agent2, temperature=1.0):
         
         if current_agent.winning_move(board, current_player):
             game_over = True
-            value = 1.0
+            # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)
+            progress = move_count / 42  # How far into the game are we
+            value = 1.0 - progress * 0.7  # Decrease reward for longer games
         elif is_draw(board):
             game_over = True
-            value = 0.0
+            value = 0  # Draws are neutral
             
         if game_over:
-            # Add final game value to all states
+            # Update values for all positions in the game
             for history in game_history:
-                # Value is from the perspective of the player at that state
                 if history['current_player'] == current_player:
-                    history['value'] = value
+                    if value == 0:  # Draw
+                        history['value'] = value  # Both players get 0 for draw
+                    else:
+                        history['value'] = value  # Winner gets positive value
                 else:
-                    history['value'] = -value
+                    if value == 0:  # Draw
+                        history['value'] = value  # Both players get 0 for draw
+                    else:
+                        history['value'] = -value  # Loser gets negative of winner's value
             return game_history
         
         current_player = 3 - current_player  # Switch players (1 -> 2 or 2 -> 1)
 
 if __name__ == "__main__":
-    # Start training with appropriate parameters for Connect 4
+    # Start training with improved parameters
     train_agent(
-        num_iterations=30,     # More iterations for longer learning
-        num_episodes=100,      # More games per iteration
-        num_epochs=15,         # Thorough training per iteration
-        batch_size=64,        # Larger batch size for stable updates
-        temperature=2.0        # High temperature for exploration
+        num_iterations=5,     # More iterations for thorough learning
+        num_episodes=30,       # Fewer but higher quality episodes
+        num_epochs=8,         # Fewer epochs to prevent overfitting
+        batch_size=32,        # Keep batch size moderate
+        temperature=1.5        # Higher temperature for better exploration
     ) 

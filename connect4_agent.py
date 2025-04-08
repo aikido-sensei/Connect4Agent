@@ -9,41 +9,50 @@ class Connect4Net(nn.Module):
     """Neural network following AlphaGo Zero architecture with both policy and value heads"""
     def __init__(self):
         super(Connect4Net, self).__init__()
-        # Common layers
-        self.conv1 = nn.Conv2d(1, 128, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(128)
-        self.conv2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(128)
-        self.conv3 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)
+        # Common layers - now expect 2 input channels
+        self.conv1 = nn.Conv2d(2, 64, 3, padding=1)  # Changed from 1 to 2 input channels
+        self.bn1 = nn.BatchNorm2d(64)
+        self.conv2 = nn.Conv2d(64, 64, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 64, 3, padding=1)
+        self.bn3 = nn.BatchNorm2d(64)
         
+        # Dropout layers
+        self.dropout = nn.Dropout(0.3)
+
         # Policy head
-        self.policy_conv = nn.Conv2d(128, 32, kernel_size=1)
+        self.policy_conv = nn.Conv2d(64, 32, 1)
         self.policy_bn = nn.BatchNorm2d(32)
-        self.policy_fc = nn.Linear(32 * 6 * 7, 7)  # 7 possible moves
+        self.policy_fc = nn.Linear(32 * 6 * 7, 7)
         
         # Value head
-        self.value_conv = nn.Conv2d(128, 32, kernel_size=1)
+        self.value_conv = nn.Conv2d(64, 32, 1)
         self.value_bn = nn.BatchNorm2d(32)
-        self.value_fc1 = nn.Linear(32 * 6 * 7, 256)
-        self.value_fc2 = nn.Linear(256, 1)
+        self.value_fc1 = nn.Linear(32 * 6 * 7, 64)
+        self.value_fc2 = nn.Linear(64, 1)
         
     def forward(self, x):
-        # Common layers
+        # Shared layers
         x = F.relu(self.bn1(self.conv1(x)))
+        x = self.dropout(x)
         x = F.relu(self.bn2(self.conv2(x)))
+        x = self.dropout(x)
         x = F.relu(self.bn3(self.conv3(x)))
+        x = self.dropout(x)
         
         # Policy head
         policy = F.relu(self.policy_bn(self.policy_conv(x)))
+        policy = self.dropout(policy)
         policy = policy.view(-1, 32 * 6 * 7)
         policy = self.policy_fc(policy)
         policy = F.softmax(policy, dim=1)
         
         # Value head
         value = F.relu(self.value_bn(self.value_conv(x)))
+        value = self.dropout(value)
         value = value.view(-1, 32 * 6 * 7)
         value = F.relu(self.value_fc1(value))
+        value = self.dropout(value)
         value = torch.tanh(self.value_fc2(value))
         
         return policy, value
@@ -58,6 +67,7 @@ class Node:
         self.state = None
         self.is_terminal = False
         self.terminal_value = None
+        self.move_count = 0  # Track move count for value decay
     
     def expanded(self):
         return len(self.children) > 0
@@ -71,15 +81,30 @@ class Connect4Agent:
     def __init__(self, num_simulations=100, c_puct=1.0):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.network = Connect4Net().to(self.device)
-        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-4)
+        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-6)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, verbose=True)
         
         self.num_simulations = num_simulations
         self.c_puct = c_puct
         
-    def get_state_tensor(self, board):
-        """Convert board to tensor state"""
-        return torch.FloatTensor(board).unsqueeze(0).unsqueeze(0).to(self.device)
+    def get_state_tensor(self, board, current_player):
+        """Convert board to tensor state with player information
+        Returns a tensor with 2 channels:
+        - Channel 1: The board state (1 for current player's pieces, -1 for opponent's pieces)
+        - Channel 2: A plane filled with 1s (indicating it's the current player's turn)
+        """
+        # Convert board to current player's perspective
+        board_tensor = torch.FloatTensor(board).unsqueeze(0)
+        # Replace opponent's pieces with -1
+        board_tensor[board_tensor == (3 - current_player)] = -1
+        # Replace current player's pieces with 1
+        board_tensor[board_tensor == current_player] = 1
+        
+        # Player plane is always 1s (indicating it's the current player's turn)
+        player_plane = torch.ones_like(board_tensor)
+        
+        state_tensor = torch.cat([board_tensor, player_plane], dim=0).unsqueeze(0)
+        return state_tensor.to(self.device)
     
     def get_valid_moves(self, board):
         """Returns list of valid moves"""
@@ -130,63 +155,95 @@ class Connect4Agent:
         """Perform MCTS search starting from root state"""
         root = Node(0)
         root.state = root_state
+        root.move_count = 0  # Initialize move count at root
         
         for _ in range(self.num_simulations):
             node = root
             search_path = [node]
             player = current_player
+            move_count = 0  # Track moves in this simulation
             
             # Selection
             while node.expanded():
                 action, node = self.select_child(node)
                 search_path.append(node)
                 player = 3 - player  # Switch players
+                move_count += 1
+                node.move_count = move_count  # Update move count for this node
             
             # Expansion and evaluation
             state = node.state
             valid_moves = self.get_valid_moves(state)
             
-            # Get policy and value from neural network
-            state_tensor = self.get_state_tensor(state)
-            with torch.no_grad():
-                policy, value = self.network(state_tensor)
-                policy = policy.cpu().numpy()[0]
-                value = value.cpu().numpy()[0][0]
+            # Initialize terminal state variables
+            is_win = False
+            is_loss = False
+            is_draw = False
+            terminal = False
+            
+            # First check for immediate wins
+            winning_move = None
+            for move in valid_moves:
+                next_state = self.get_next_state(state, player, move)
+                if self.winning_move(next_state, player):
+                    winning_move = move
+                    break
+            
+            if winning_move is not None:
+                # If there's a winning move, only expand that one with 100% probability
+                policy = np.zeros(7)
+                policy[winning_move] = 1.0
+                value = 1.0  # Maximum value for a win
+                terminal = True
+                is_win = True
+            else:
+                # Get policy and value from neural network
+                state_tensor = self.get_state_tensor(state, player)
+                with torch.no_grad():
+                    policy, value = self.network(state_tensor)
+                    policy = policy.cpu().numpy()[0]
+                    value = value.cpu().numpy()[0][0]
                 
-                # Flip value if it's player 2's turn
-                if player != current_player:
-                    value = -value
-            
-            # Mask invalid moves
-            policy_mask = np.zeros(7)
-            policy_mask[valid_moves] = 1
-            policy = policy * policy_mask
-            if np.sum(policy) > 0:
-                policy = policy / np.sum(policy)
-            
-            # Check if terminal state
-            terminal = len(valid_moves) == 0 or self.winning_move(state, 1) or self.winning_move(state, 2)
-            if terminal:
-                if self.winning_move(state, current_player):
-                    value = 1.0
-                elif self.winning_move(state, 3 - current_player):
-                    value = -1.0
-                else:
-                    value = 0.0  # Draw
+                # Mask invalid moves
+                policy_mask = np.zeros(7)
+                policy_mask[valid_moves] = 1
+                policy = policy * policy_mask
+                if np.sum(policy) > 0:
+                    policy = policy / np.sum(policy)
+                
+                # Check if terminal state
+                is_win = self.winning_move(state, player)
+                is_loss = self.winning_move(state, 3 - player)
+                is_draw = len(valid_moves) == 0 and not is_win and not is_loss
+                terminal = is_win or is_loss or is_draw
+                
+                if terminal:
+                    if is_win:
+                        # Winning quickly is better
+                        progress = move_count / 42
+                        value = 1.0 - progress * 0.7
+                    elif is_loss:
+                        # Losing later is better
+                        progress = move_count / 42
+                        value = -(1.0 - progress * 0.7)
+                    else:  # Draw
+                        value = 0  # Draws are neutral
             
             # Expand if not terminal
             if not terminal:
                 node.is_terminal = False
                 for action in valid_moves:
                     next_state = self.get_next_state(state, action, player)
-                    node.children[action] = Node(prior=policy[action])
-                    node.children[action].state = next_state
+                    child = Node(prior=policy[action])
+                    child.state = next_state
+                    child.move_count = move_count + 1  # Child nodes are one move deeper
+                    node.children[action] = child
             else:
                 node.is_terminal = True
                 node.terminal_value = value
             
-            # Backpropagate
-            self.backpropagate(search_path, value)
+            # Backpropagate with temporal discount
+            self.backpropagate(search_path, value, move_count, is_draw=(terminal and is_draw))
         
         return root
     
@@ -208,15 +265,32 @@ class Connect4Agent:
     def ucb_score(self, parent, child):
         """Calculate UCB score using PUCT algorithm"""
         prior_score = self.c_puct * child.prior * math.sqrt(parent.visit_count) / (1 + child.visit_count)
-        value_score = -child.value()  # Negative because we alternate players
+        if child.is_terminal and child.terminal_value == 0:  # Draw
+            value_score = 0  # Draws are neutral
+        else:
+            value_score = child.value()
         return prior_score + value_score
     
-    def backpropagate(self, search_path, value):
-        """Backpropagate value through search path"""
+    def backpropagate(self, search_path, value, total_moves, is_draw=False):
+        """Backpropagate value through search path with temporal discounting"""
+        discount_factor = 0.95
         for node in reversed(search_path):
-            node.value_sum += value
+            # Apply temporal discount based on distance from end
+            moves_to_end = total_moves - node.move_count
+            discounted_value = value * (discount_factor ** moves_to_end)
+            
+            if is_draw:
+                # For draws, always add 0
+                node.value_sum += 0
+            else:
+                # For wins/losses, use the discounted value
+                node.value_sum += discounted_value
+            
+            # Alternate value for next node (except for draws)
+            if not is_draw:
+                value = -value
+            
             node.visit_count += 1
-            value = -value  # Alternate value for opponent
     
     def get_action_probs(self, state, current_player, temperature=1.0):
         """Get action probabilities after MCTS search"""

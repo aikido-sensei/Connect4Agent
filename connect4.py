@@ -119,7 +119,7 @@ pygame.display.set_caption("Connect 4")
 # Load the trained agent
 agent = Connect4Agent(num_simulations=100)
 try:
-    agent.model.load_state_dict(torch.load('models/model_latest.pth'))
+    agent.load_model('models/model_latest.pth')
     print("Loaded trained model successfully!")
 except:
     print("No trained model found, using untrained model")
@@ -162,11 +162,11 @@ while True:
     
     elif game_state == PLAYING:
         # Handle agent's turn if playing against agent
-        if vs_agent and turn == 1:
+        if vs_agent and turn == 0:
             pygame.time.wait(500)  # Fixed 500ms delay for better UX
             
             # Get agent's move using MCTS
-            action_probs = agent.get_action_probs(board, 2, temperature=0.5)  # Pass numpy array directly
+            action_probs = agent.get_action_probs(board, 1, temperature=0.5)
             col = np.argmax(action_probs)
             
             # Ensure move is valid
@@ -178,11 +178,11 @@ while True:
                     continue
                     
             row = get_next_open_row(board, col)
-            drop_piece(board, row, col, 2)
+            drop_piece(board, row, col, 1)
             
             # Check for win
-            if agent.winning_move(board, 2):
-                winner = 2
+            if agent.winning_move(board, 1):
+                winner = 1
                 game_state = GAME_OVER
             elif len([col for col in range(7) if is_valid_location(board, col)]) == 0:
                 winner = 0
