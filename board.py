@@ -19,6 +19,9 @@ class PlayerTracker:
 
     def piece(self):
         return self.active_player.value
+    
+    def opponent_piece(self):
+        return 3 - self.active_player.value
 
 
 class Board:
@@ -30,14 +33,14 @@ class Board:
         """ Remove all pieces from the board."""
         self.board = np.zeros((6, 7))
     
-    def get_next_open_row(self, col):
+    def get_next_open_row(self, col: int):
         """ On a selected column, find the row on which a piece can be added"""
         for r in range(5, -1, -1):
             if self.board[r][col] == 0:
                 return r
         return -1
 
-    def is_valid_location(self, col):
+    def is_valid_location(self, col: int):
         """ Check whether the given column is full or not.
         Return True if the column is not full, False otherwise"""
         return self.board[0][col] == 0
@@ -46,15 +49,16 @@ class Board:
         """Returns list of valid moves"""
         return [col for col in range(7) if self.is_valid_location(col)]
     
-    def drop_piece(self, row, col, piece):
-        """ Adds the given piece at the given spot on the board.
+    def drop_piece(self, row: int, col: int, player: PlayerTracker):
+        """ Adds the piece of the given player at the given spot on the board.
         We assume that the row-column combination is a valid move"""
-        self.board[row][col] = piece
+        self.board[row][col] = player.piece()
     
-    def has_won(self, piece):
+    def has_won(self, player: PlayerTracker):
         """ Determine whether a given player has won.
         To win, 4 pieces owned by the player need to be aligned vertically, horizontally, or diagonally."""
         # Check horizontal locations
+        piece = player.piece()
         for c in range(4):
             for r in range(6):
                 if self.board[r][c] == piece and self.board[r][c + 1] == piece and \
@@ -92,20 +96,15 @@ class Board:
                 return False
         return True
     
-    def get_next_state(self, action, piece):
+    def get_next_state(self, col: int, player: PlayerTracker):
         """Returns next state after taking action"""
         next_board = Board()
         next_board.board = self.board.copy()
-        row = next_board.get_next_open_row(action)
+        row = next_board.get_next_open_row(col)
         if row != -1:
-            next_board.drop_piece(row, action, piece)
+            next_board.drop_piece(row, col, player)
         return next_board
 
-    def value_at_slot(self, row, col):
+    def value_at_slot(self, row: int, col: int):
         return self.board[row][col]
-    
-    
-    
-    
-    
     

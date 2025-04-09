@@ -86,9 +86,10 @@ def draw_game_over(screen, winner, board):
     # Draw winner message
     if winner == 0:
         message = "It's a tie!"
+        win_text = game_font.render(message, 1, WHITE)
     else:
         message = f"Player {winner} wins!"
-    win_text = game_font.render(message, 1, RED if winner == 1 else YELLOW)
+        win_text = game_font.render(message, 1, player_colours[winner])
     screen.blit(win_text, (width // 2 - win_text.get_width() // 2, SQUARESIZE + 50))
     
     # Draw menu button
@@ -154,7 +155,7 @@ def main():
                 pygame.time.wait(500)  # Fixed 500ms delay for better UX
                 
                 # Get agent's move using MCTS
-                action_probs = agent.get_action_probs(board, player.piece(), temperature=0.5)
+                action_probs = agent.get_action_probs(board, player, temperature=0.5)
                 col = np.argmax(action_probs)
                 
                 # Ensure move is valid
@@ -166,7 +167,7 @@ def main():
                         continue
                 
                 row = board.get_next_open_row(col)
-                board.drop_piece(row, col, player.piece())
+                board.drop_piece(row, col, player)
             
             # Handle human's turn
             else:
@@ -196,11 +197,11 @@ def main():
                             if row == -1:
                                 continue
                             
-                            board.drop_piece(row, col, player.piece())
+                            board.drop_piece(row, col, player)
                             made_choice = True
             
             # Check for win
-            if board.has_won(player.piece()):
+            if board.has_won(player):
                 winner = player.piece()
                 game_state = GAME_OVER
             elif board.has_draw():
