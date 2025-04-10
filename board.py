@@ -12,15 +12,19 @@ class PlayerTracker:
         self.active_player = PlayerTypes.PLAYER1
     
     def is_p1_turn(self):
+        """ Check whether it's currently player 1's turn"""
         return self.active_player == PlayerTypes.PLAYER1
     
     def switch_players(self):
+        """ Switch active players"""
         self.active_player = PlayerTypes.PLAYER2 if self.is_p1_turn() else PlayerTypes.PLAYER1
 
     def piece(self):
+        """ Get the piece that the active player uses (1 for player 1, 2 for player 2)"""
         return self.active_player.value
     
     def opponent_piece(self):
+        """ Get the piece that the opponent uses (1 for player 1, 2 for player 2)"""
         return 3 - self.active_player.value
 
 
@@ -106,5 +110,6 @@ class Board:
         return next_board
 
     def value_at_slot(self, row: int, col: int):
+        """ Get the value at the given slot on the board"""
         return self.board[row][col]
     

@@ -1,131 +1,110 @@
 import numpy as np
-import torch
 from connect4_agent import Connect4Agent
+from board import Board, PlayerTracker
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
-from collections import deque
 import random
 
-def create_board():
-    return np.zeros((6, 7))
 
-def drop_piece(board, row, col, piece):
-    board[row][col] = piece
-
-def is_valid_location(board, col):
-    return board[0][col] == 0
-
-def get_next_open_row(board, col):
-    for r in range(5, -1, -1):
-        if board[r][col] == 0:
-            return r
-    return -1
-
-def winning_move(board, piece):
-    # Check horizontal locations
-    for c in range(4):
-        for r in range(6):
-            if board[r][c] == piece and board[r][c+1] == piece and \
-               board[r][c+2] == piece and board[r][c+3] == piece:
-                return True
-
-    # Check vertical locations
-    for c in range(7):
-        for r in range(3):
-            if board[r][c] == piece and board[r+1][c] == piece and \
-               board[r+2][c] == piece and board[r+3][c] == piece:
-                return True
-
-    # Check positively sloped diagonals
-    for c in range(4):
-        for r in range(3):
-            if board[r][c] == piece and board[r+1][c+1] == piece and \
-               board[r+2][c+2] == piece and board[r+3][c+3] == piece:
-                return True
-
-    # Check negatively sloped diagonals
-    for c in range(4):
-        for r in range(3, 6):
-            if board[r][c] == piece and board[r-1][c+1] == piece and \
-               board[r-2][c+2] == piece and board[r-3][c+3] == piece:
-                return True
+def make_move(agent: Connect4Agent, board: Board, current_player: PlayerTracker, temperature, game_history, move_count):
+    """ Perform an action. Returns True if action ends the game
+    (either by reaching a win or draw, or performing an illegal move)"""
     
+    # Get action probabilities from MCTS
+    action_probs = agent.get_action_probs(board, current_player, temperature)
+    move_count += 1
+    
+    # Store state and probabilities
+    game_history.append({
+        'state': board.board.copy(),
+        'current_player': current_player.piece(),
+        'policy': action_probs,
+        'move_number': move_count,
+        'value': 0.0  # Initialize value to 0
+    })
+    
+    # Select action
+    if temperature == 0:
+        action = np.argmax(action_probs)
+    else:
+        # Add small noise to probabilities for exploration
+        noise = np.random.dirichlet([0.3] * len(action_probs))
+        action_probs = 0.75 * action_probs + 0.25 * noise
+        action_probs = action_probs / np.sum(action_probs)
+        action = np.random.choice(7, p=action_probs)
+        
+    # Make move
+    row = board.get_next_open_row(action)
+    if row == -1:  # Invalid move
+        # Penalize invalid moves heavily
+        for history in game_history:
+            history['value'] = -1.0 if history['current_player'] == current_player.piece() else 1.0
+        return True
+    
+    board.drop_piece(row, action, current_player)
+    
+    # Check if game is over
+    game_over = False
+    value = 0
+    
+    if board.has_won(current_player):
+        game_over = True
+        # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)
+        progress = move_count / 42  # How far into the game are we
+        value = 1.0 - progress * 0.7  # Decrease reward for longer games
+    elif board.has_draw():
+        game_over = True
+        value = 0  # Draws are neutral
+    
+    if game_over:
+        # Update values for all positions in the game
+        for history in game_history:
+            if value == 0:  # Draw
+                history['value'] = value  # Both players get 0 for draw
+            else:
+                # Loser gets negative of winner's value
+                mult = 1 if history['current_player'] == current_player.piece() else -1
+                history['value'] = mult * value
+        return True
     return False
 
-def is_draw(board):
-    return len([col for col in range(7) if board[0][col] == 0]) == 0
 
-def play_self_play_game(agent, temperature=1.0):
+def play_self_play_game(agent: Connect4Agent, temperature=1.0):
     """Play a self-play game and return game history"""
-    board = create_board()
+    board = Board()
     game_history = []
-    current_player = random.choice([1, 2])  # Randomly choose starting player
+    current_player = PlayerTracker()
+    if random.choice([1, 2]) == 2:  # Randomly choose starting player
+        current_player.switch_players()
     move_count = 0
     
     while True:
-        # Get action probabilities from MCTS
-        action_probs = agent.get_action_probs(board, current_player, temperature)
         move_count += 1
-        
-        # Store state and probabilities
-        game_history.append({
-            'state': board.copy(),
-            'current_player': current_player,
-            'policy': action_probs,
-            'move_number': move_count,
-            'value': 0  # Initialize value to 0
-        })
-        
-        # Select action
-        if temperature == 0:
-            action = np.argmax(action_probs)
-        else:
-            # Add small noise to probabilities for exploration
-            noise = np.random.dirichlet([0.3] * len(action_probs))
-            action_probs = 0.75 * action_probs + 0.25 * noise
-            action_probs = action_probs / np.sum(action_probs)
-            action = np.random.choice(7, p=action_probs)
-        
-        # Make move
-        row = get_next_open_row(board, action)
-        if row == -1:  # Invalid move
-            # Penalize invalid moves heavily
-            for history in game_history:
-                history['value'] = -1.0 if history['current_player'] == current_player else 1.0
+        terminate = make_move(agent, board, current_player, temperature, game_history, move_count)
+        if terminate:
             return game_history
-            
-        drop_piece(board, row, action, current_player)
-        
-        # Check if game is over
-        game_over = False
-        value = 0
-        
-        if agent.winning_move(board, current_player):
-            game_over = True
-            # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)
-            progress = move_count / 42  # How far into the game are we
-            value = 1.0 - progress * 0.7  # Decrease reward for longer games
-        elif is_draw(board):
-            game_over = True
-            value = 0  # Draws are neutral
-        
-        if game_over:
-            # Update values for all positions in the game
-            for history in game_history:
-                if history['current_player'] == current_player:
-                    if value == 0:  # Draw
-                        history['value'] = value  # Both players get 0 for draw
-                    else:
-                        history['value'] = value  # Winner gets positive value
-                else:
-                    if value == 0:  # Draw
-                        history['value'] = value  # Both players get 0 for draw
-                    else:
-                        history['value'] = -value  # Loser gets negative of winner's value
+        current_player.switch_players()  # Switch players (1 -> 2 or 2 -> 1)
+
+
+def play_game(agent1: Connect4Agent, agent2: Connect4Agent, temperature=1.0):
+    """Play a game between two agents and return game history"""
+    board = Board()
+    game_history = []
+    current_player = PlayerTracker()
+    if random.choice([1, 2]) == 2:  # Randomly choose starting player
+        current_player.switch_players()
+    move_count = 0
+    
+    while True:
+        # Get action probabilities from current player's agent
+        current_agent = agent1 if current_player.is_p1_turn() else agent2
+        move_count += 1
+        terminate = make_move(current_agent, board, current_player, temperature, game_history, move_count)
+        if terminate:
             return game_history
-        
-        current_player = 3 - current_player  # Switch players (1 -> 2 or 2 -> 1)
+        current_player.switch_players()  # Switch players (1 -> 2 or 2 -> 1)
+
 
 def train_network(agent, game_histories, batch_size=32):
     """Train neural network on collected game data"""
@@ -164,6 +143,7 @@ def train_network(agent, game_histories, batch_size=32):
     # Train network
     return agent.train(states, policies, values)
 
+
 def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0):
     """Main training loop following AlphaGo Zero methodology"""
     current_agent = Connect4Agent(num_simulations=100, c_puct=2.0)  # More simulations and higher exploration
@@ -191,9 +171,9 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
     
     # Training iterations
     for iteration in range(num_iterations):
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print(f"Iteration {iteration + 1}/{num_iterations}")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
         
         # Collect self-play games
         game_histories = []
@@ -221,7 +201,7 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
                 game_history = play_game(current_agent, opponent, temp)
             else:
                 game_history = play_self_play_game(current_agent, temp)
-                
+            
             game_histories.append(game_history)
             episode_lengths.append(len(game_history))
             
@@ -246,13 +226,13 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
         
         print(f"\nGame Statistics:")
         print(f"Average game length: {np.mean(episode_lengths):.1f} moves")
-        print(f"Win rate: {win_rate*100:.1f}%")
-        print(f"Draw rate: {draw_rate*100:.1f}%")
-        print(f"Loss rate: {loss_rate*100:.1f}%")
+        print(f"Win rate: {win_rate * 100:.1f}%")
+        print(f"Draw rate: {draw_rate * 100:.1f}%")
+        print(f"Loss rate: {loss_rate * 100:.1f}%")
         
         # Train network on collected games
         epoch_losses = []
-        for epoch in tqdm(range(num_epochs), desc="Training epochs"):
+        for _ in tqdm(range(num_epochs), desc="Training epochs"):
             result = train_network(current_agent, game_histories, batch_size)
             if result is not None:
                 total_loss, policy_loss, value_loss = result
@@ -308,92 +288,18 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
     plt.tight_layout()
     plt.savefig('models/training_curves.png')
     plt.close()
-        
+    
     print("\nTraining completed!")
     print("Final model saved as: models/model_latest.pth")
     print("Training curves saved as: models/training_curves.png")
 
-def play_game(agent1, agent2, temperature=1.0):
-    """Play a game between two agents"""
-    board = create_board()
-    game_history = []
-    current_player = random.choice([1, 2])  # Randomly choose starting player
-    move_count = 0
-    
-    while True:
-        # Get current state
-        state = board.copy()
-        move_count += 1
-        
-        # Get action probabilities from current player's agent
-        current_agent = agent1 if current_player == 1 else agent2
-        action_probs = current_agent.get_action_probs(board, current_player, temperature)
-        
-        # Store state and probabilities
-        game_history.append({
-            'state': state.copy(),
-            'current_player': current_player,
-            'policy': action_probs,
-            'move_number': move_count,
-            'value': 0  # Initialize value to 0
-        })
-        
-        # Select action
-        if temperature == 0:
-            action = np.argmax(action_probs)
-        else:
-            # Add small noise to probabilities for exploration
-            noise = np.random.dirichlet([0.3] * len(action_probs))
-            action_probs = 0.75 * action_probs + 0.25 * noise
-            action_probs = action_probs / np.sum(action_probs)
-            action = np.random.choice(7, p=action_probs)
-        
-        # Make move
-        row = get_next_open_row(board, action)
-        if row == -1:  # Invalid move
-            # Penalize invalid moves heavily
-            for history in game_history:
-                history['value'] = -1.0 if history['current_player'] == current_player else 1.0
-            return game_history
-            
-        drop_piece(board, row, action, current_player)
-        
-        # Check if game is over
-        game_over = False
-        value = 0
-        
-        if current_agent.winning_move(board, current_player):
-            game_over = True
-            # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)
-            progress = move_count / 42  # How far into the game are we
-            value = 1.0 - progress * 0.7  # Decrease reward for longer games
-        elif is_draw(board):
-            game_over = True
-            value = 0  # Draws are neutral
-            
-        if game_over:
-            # Update values for all positions in the game
-            for history in game_history:
-                if history['current_player'] == current_player:
-                    if value == 0:  # Draw
-                        history['value'] = value  # Both players get 0 for draw
-                    else:
-                        history['value'] = value  # Winner gets positive value
-                else:
-                    if value == 0:  # Draw
-                        history['value'] = value  # Both players get 0 for draw
-                    else:
-                        history['value'] = -value  # Loser gets negative of winner's value
-            return game_history
-        
-        current_player = 3 - current_player  # Switch players (1 -> 2 or 2 -> 1)
 
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        num_iterations=5,     # More iterations for thorough learning
-        num_episodes=30,       # Fewer but higher quality episodes
-        num_epochs=8,         # Fewer epochs to prevent overfitting
-        batch_size=32,        # Keep batch size moderate
-        temperature=1.5        # Higher temperature for better exploration
-    ) 
+        num_iterations=1000,  # More iterations for thorough learning
+        num_episodes=30,  # Fewer but higher quality episodes
+        num_epochs=8,  # Fewer epochs to prevent overfitting
+        batch_size=32,  # Keep batch size moderate
+        temperature=1.5  # Higher temperature for better exploration
+    )
