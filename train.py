@@ -5,6 +5,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
 import random
+from datetime import datetime
 
 
 def make_move(agent: Connect4Agent, board: Board, current_player: PlayerTracker, temperature, game_history, move_count):
@@ -168,13 +169,17 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
     
     # Keep track of best loss
     best_loss = float('inf')
-    
+
+    print("START:", datetime.today().strftime('%Y-%m-%d %H:%M:%S'))
     # Training iterations
     for iteration in range(num_iterations):
         print(f"\n{'=' * 50}")
         print(f"Iteration {iteration + 1}/{num_iterations}")
         print(f"{'=' * 50}")
-        
+
+        if iteration % 200 == 0:
+            current_agent.save_model('models/model_latest_' + str(iteration) + '.pth')
+
         # Collect self-play games
         game_histories = []
         episode_lengths = []
@@ -254,7 +259,8 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
                 if len(model_pool) > pool_size:
                     model_pool.pop(0)  # Remove oldest model
                 print(f"\nModel added to pool (pool size: {len(model_pool)})")
-    
+
+    print("END:", datetime.today().strftime('%Y-%m-%d %H:%M:%S'))
     # Save only the final model
     current_agent.save_model('models/model_latest.pth')
     
@@ -298,8 +304,8 @@ if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
         num_iterations=1000,  # More iterations for thorough learning
-        num_episodes=30,  # Fewer but higher quality episodes
-        num_epochs=8,  # Fewer epochs to prevent overfitting
-        batch_size=32,  # Keep batch size moderate
-        temperature=1.5  # Higher temperature for better exploration
+        num_episodes=50,  # Fewer but higher quality episodes
+        num_epochs=50,  # Fewer epochs to prevent overfitting
+        batch_size=64,  # Keep batch size moderate
+        temperature=1.9  # Higher temperature for better exploration
     )
