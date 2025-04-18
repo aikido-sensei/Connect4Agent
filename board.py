@@ -27,6 +27,11 @@ class PlayerTracker:
         """ Get the piece that the opponent uses (1 for player 1, 2 for player 2)"""
         return 3 - self.active_player.value
 
+    def copy(self):
+        p = PlayerTracker()
+        p.active_player = self.active_player
+        return p
+
 
 class Board:
     def __init__(self):

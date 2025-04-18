@@ -119,7 +119,7 @@ class Connect4Agent:
         for _ in range(self.num_simulations):
             node = root
             search_path = [node]
-            player = current_player
+            player = current_player.copy()
             move_count = 0  # Track moves in this simulation
             
             # Selection (DFS)
@@ -256,8 +256,7 @@ class Connect4Agent:
     def get_action_probs(self, state: Board, current_player: PlayerTracker, temperature=1.0):
         """Get action probabilities after MCTS search"""
         # Duplicate current player information so that agent can explore without altering true current state
-        agent_player = PlayerTracker()
-        agent_player.active_player = current_player.active_player
+        agent_player = current_player.copy()
         
         root = self.search(state, agent_player)
         visit_counts = np.array([child.visit_count for child in root.children.values()])

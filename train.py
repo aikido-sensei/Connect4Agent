@@ -145,9 +145,9 @@ def train_network(agent, game_histories, batch_size=32):
     return agent.train(states, policies, values)
 
 
-def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0):
+def train_agent(num_iters=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0, num_sims=100, puct=2.0):
     """Main training loop following AlphaGo Zero methodology"""
-    current_agent = Connect4Agent(num_simulations=100, c_puct=2.0)  # More simulations and higher exploration
+    current_agent = Connect4Agent(num_simulations=num_sims, c_puct=puct)  # More simulations and higher exploration
     
     # Pool of previous best models (max size 5)
     model_pool = []
@@ -172,9 +172,9 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
 
     print("START:", datetime.today().strftime('%Y-%m-%d %H:%M:%S'))
     # Training iterations
-    for iteration in range(num_iterations):
+    for iteration in range(num_iters):
         print(f"\n{'=' * 50}")
-        print(f"Iteration {iteration + 1}/{num_iterations}")
+        print(f"Iteration {iteration + 1}/{num_iters}")
         print(f"{'=' * 50}")
 
         if iteration % 200 == 0:
@@ -190,7 +190,7 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
         for episode in tqdm(range(num_episodes), desc="Self-play games"):
             # More gradual temperature annealing
             progress = episode / num_episodes
-            if progress < 0.8:  # Keep high temperature for 80% of episodes
+            if progress < 0.5:  # Keep high temperature for 80% of episodes
                 temp = temperature
             else:
                 # Gradually decrease temperature in last 20% of episodes
@@ -200,7 +200,7 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
             # 50% chance to play against a previous model if available
             if model_pool and random.random() < 0.70:
                 # Create opponent agent and load random previous model
-                opponent = Connect4Agent(num_simulations=100, c_puct=2.0)  # Same settings for opponent
+                opponent = Connect4Agent(num_simulations=num_sims, c_puct=puct)  # Same settings for opponent
                 opponent_state = random.choice(model_pool)
                 opponent.load_state_dict(opponent_state)
                 game_history = play_game(current_agent, opponent, temp)
@@ -303,9 +303,10 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        num_iterations=1000,  # More iterations for thorough learning
-        num_episodes=50,  # Fewer but higher quality episodes
-        num_epochs=50,  # Fewer epochs to prevent overfitting
-        batch_size=64,  # Keep batch size moderate
-        temperature=1.9  # Higher temperature for better exploration
+        num_iters=1000,  # More iterations for thorough learning
+        num_episodes=1,  # Fewer but higher quality episodes
+        num_epochs=1,  # Fewer epochs to prevent overfitting
+        batch_size=10,  # Keep batch size moderate
+        temperature=1,  # Higher temperature for better exploration
+        num_sims=400
     )
