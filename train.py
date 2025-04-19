@@ -161,7 +161,10 @@ def train_agent(num_iters=100, num_episodes=100, num_epochs=10, batch_size=32, t
         'episode_lengths': [],
         'win_rates': [],
         'draw_rates': [],
-        'loss_rates': []
+        'loss_rates': [],
+        "draws": [],
+        "losses": [],
+        "wins": []
     }
     
     # Create directory for saving models
@@ -179,6 +182,7 @@ def train_agent(num_iters=100, num_episodes=100, num_epochs=10, batch_size=32, t
 
         if iteration % 200 == 0:
             current_agent.save_model('models/model_latest_' + str(iteration) + '.pth')
+            save_metrics(metrics, iteration)
 
         # Collect self-play games
         game_histories = []
@@ -209,15 +213,25 @@ def train_agent(num_iters=100, num_episodes=100, num_epochs=10, batch_size=32, t
             
             game_histories.append(game_history)
             episode_lengths.append(len(game_history))
+            metrics["episode_lengths"].append(len(game_history))
             
             # Count game outcomes
             final_state = game_history[-1]
             if final_state['value'] == 0:  # Draw
                 draws += 1
+                metrics["draws"].append(1)
+                metrics["wins"].append(0)
+                metrics["losses"].append(0)
             elif final_state['value'] > 0:  # Win
                 wins += 1
+                metrics["draws"].append(0)
+                metrics["wins"].append(1)
+                metrics["losses"].append(0)
             else:  # Loss
                 losses += 1
+                metrics["draws"].append(0)
+                metrics["wins"].append(0)
+                metrics["losses"].append(1)
         
         # Calculate statistics
         total_games = wins + losses + draws
@@ -263,10 +277,16 @@ def train_agent(num_iters=100, num_episodes=100, num_epochs=10, batch_size=32, t
     print("END:", datetime.today().strftime('%Y-%m-%d %H:%M:%S'))
     # Save only the final model
     current_agent.save_model('models/model_latest.pth')
-    
+
+    print("\nTraining completed!")
+    print("Final model saved as: models/model_latest.pth")
+    print("Training curves saved as: models/training_curves.png")
+
+
+def save_metrics(metrics, i):
     # Create one comprehensive plot at the end
     plt.figure(figsize=(15, 5))
-    
+
     plt.subplot(1, 3, 1)
     plt.plot(metrics['total_loss'], label='Total Loss')
     plt.plot(metrics['policy_loss'], label='Policy Loss')
@@ -275,13 +295,13 @@ def train_agent(num_iters=100, num_episodes=100, num_epochs=10, batch_size=32, t
     plt.xlabel('Training Step')
     plt.ylabel('Loss')
     plt.legend()
-    
+
     plt.subplot(1, 3, 2)
     plt.plot(metrics['episode_lengths'])
     plt.title('Episode Lengths')
     plt.xlabel('Episode')
     plt.ylabel('Length')
-    
+
     plt.subplot(1, 3, 3)
     plt.plot(metrics['win_rates'], label='Win Rate')
     plt.plot(metrics['draw_rates'], label='Draw Rate')
@@ -290,23 +310,24 @@ def train_agent(num_iters=100, num_episodes=100, num_epochs=10, batch_size=32, t
     plt.xlabel('Iteration')
     plt.ylabel('Rate')
     plt.legend()
-    
+
     plt.tight_layout()
-    plt.savefig('models/training_curves.png')
+    plt.savefig(f'models/training_curves_{i}.png')
     plt.close()
-    
-    print("\nTraining completed!")
-    print("Final model saved as: models/model_latest.pth")
-    print("Training curves saved as: models/training_curves.png")
+
+    with open(f'models/csv_data_{i}', 'w') as f:
+        f.write("total_loss,policy_loss,value_loss,episode_lengths,wins,draws,losses\n")
+        for i in range(len(metrics['total_loss'])):
+            f.write(f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics["draws"][i]},{metrics["losses"][i]}\n")
 
 
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        num_iters=1000,  # More iterations for thorough learning
-        num_episodes=1,  # Fewer but higher quality episodes
-        num_epochs=1,  # Fewer epochs to prevent overfitting
+        num_iters=1200,  # More iterations for thorough learning
+        num_episodes=10,  # Fewer but higher quality episodes
+        num_epochs=10,  # Fewer epochs to prevent overfitting
         batch_size=10,  # Keep batch size moderate
-        temperature=1,  # Higher temperature for better exploration
-        num_sims=400
+        temperature=1.3,  # Higher temperature for better exploration
+        num_sims=100
     )
