@@ -166,9 +166,10 @@ def train_network(agent, game_histories, batch_size=32):
 
 def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0):
     """Main training loop following AlphaGo Zero methodology"""
-    current_agent = Connect4Agent(num_simulations=100, c_puct=2.0)  # More simulations and higher exploration
+    current_agent = Connect4Agent(num_simulations=400, c_puct=2.0)  # More simulations and higher exploration
     
     # Pool of previous best models (max size 5)
+    use_model_pool = False
     model_pool = []
     pool_size = 5
     
@@ -213,7 +214,7 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
                 temp = max(0.5, temp)  # Don't go below 0.5 to maintain some exploration
             
             # 50% chance to play against a previous model if available
-            if model_pool and random.random() < 0.70:
+            if use_model_pool and model_pool and random.random() < 0.70:
                 # Create opponent agent and load random previous model
                 opponent = Connect4Agent(num_simulations=100, c_puct=2.0)  # Same settings for opponent
                 opponent_state = random.choice(model_pool)
@@ -391,9 +392,9 @@ def play_game(agent1, agent2, temperature=1.0):
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        num_iterations=5,     # More iterations for thorough learning
-        num_episodes=30,       # Fewer but higher quality episodes
-        num_epochs=8,         # Fewer epochs to prevent overfitting
-        batch_size=32,        # Keep batch size moderate
-        temperature=1.5        # Higher temperature for better exploration
+        num_iterations=50,     # More iterations for thorough learning
+        num_episodes=100,       # Fewer but higher quality episodes
+        num_epochs=10,         # Fewer epochs to prevent overfitting
+        batch_size=10,        # Keep batch size moderate
+        temperature=2.0        # Higher temperature for better exploration
     ) 

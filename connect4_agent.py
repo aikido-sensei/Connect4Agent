@@ -81,7 +81,7 @@ class Connect4Agent:
     def __init__(self, num_simulations=100, c_puct=1.0):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.network = Connect4Net().to(self.device)
-        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-6)
+        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, verbose=True)
         
         self.num_simulations = num_simulations
