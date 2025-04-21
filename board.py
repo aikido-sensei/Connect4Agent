@@ -83,8 +83,11 @@ def change_players(current_player):
     return 3 - current_player
 
 
-def discount_value(value, move_count):
-    """Discount the current win value."""
+def discount_value(value, move_count, use_discounting):
+    """Discount the current win value, if desired."""
+    if not use_discounting:
+        return value
+
     if value == 0:
         return 0
     # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)

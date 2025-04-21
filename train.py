@@ -1,20 +1,19 @@
-import numpy as np
-import torch
 from connect4_agent import Connect4Agent
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
-from collections import deque
 import random
 from board import *
 from monte_carlo import Node
+from hyperparameters import Hyperparameters
 
 
-def make_move(agent, board, current_player, game_history, move_count, temperature):
+def make_move(agent: Connect4Agent, board: np.ndarray, current_player: int, game_history: list,
+              move_count: int, temperature: float, use_discounting: bool):
     # Get current state
     state = board.copy()
     # Get action probabilities from MCTS
-    action_probs = agent.get_action_probs(state, current_player, temperature)
+    action_probs = agent.get_action_probs(state, current_player, temperature, use_discounting)
 
     # Store state and probabilities
     game_history.append({
@@ -44,7 +43,7 @@ def make_move(agent, board, current_player, game_history, move_count, temperatur
 
     if winning_move(board, current_player):
         game_over = True
-        value = discount_value(1, move_count)
+        value = discount_value(1, move_count, use_discounting)
     elif is_draw(board):
         game_over = True
         value = 0  # Draws are neutral
@@ -61,7 +60,7 @@ def make_move(agent, board, current_player, game_history, move_count, temperatur
     return game_over
 
 
-def play_self_play_game(agent, temperature=1.0):
+def play_self_play_game(agent, use_discounting: bool, temperature):
     """Play a self-play game and return game history"""
     board = create_board()
     game_history = []
@@ -70,13 +69,13 @@ def play_self_play_game(agent, temperature=1.0):
 
     while True:
         move_count += 1
-        over = make_move(agent, board, current_player, game_history, move_count, temperature)
+        over = make_move(agent, board, current_player, game_history, move_count, temperature, use_discounting)
         if over:
             return game_history
         current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
 
 
-def play_game(agent1, agent2, temperature=1.0):
+def play_game(agent1, agent2, use_discounting: bool, temperature):
     """Play a game between two agents"""
     board = create_board()
     game_history = []
@@ -86,13 +85,13 @@ def play_game(agent1, agent2, temperature=1.0):
     while True:
         move_count += 1
         current_agent = agent1 if current_player == 1 else agent2
-        over = make_move(current_agent, board, current_player, game_history, move_count, temperature)
+        over = make_move(current_agent, board, current_player, game_history, move_count, temperature, use_discounting)
         if over:
             return game_history
         current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
 
 
-def train_network(agent, game_histories, batch_size=32):
+def train_network(agent, game_histories, batch_size):
     """Train neural network on collected game data"""
     # Flatten game histories
     training_data = []
@@ -130,9 +129,9 @@ def train_network(agent, game_histories, batch_size=32):
     return agent.train(states, policies, values, batch_size)
 
 
-def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0, sims=100):
+def train_agent(params: Hyperparameters):
     """Main training loop following AlphaGo Zero methodology"""
-    current_agent = Connect4Agent(num_simulations=sims, c_puct=2.0)  # More simulations and higher exploration
+    current_agent = params.init_agent()  # initialize agent based on hyperparameters
 
     # Pool of previous best models (max size 5)
     model_pool = []
@@ -159,9 +158,9 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
     best_loss = float('inf')
 
     # Training iterations
-    for iteration in range(num_iterations):
+    for iteration in range(params.num_iterations):
         print(f"\n{'=' * 50}")
-        print(f"Iteration {iteration + 1}/{num_iterations}")
+        print(f"Iteration {iteration + 1}/{params.num_iterations}")
         print(f"{'=' * 50}")
 
         if iteration % 10 == 0:
@@ -175,25 +174,25 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
         losses = 0
         draws = 0
 
-        for episode in tqdm(range(num_episodes), desc="Self-play games"):
+        for episode in tqdm(range(params.num_episodes), desc="Self-play games"):
             # More gradual temperature annealing
-            progress = episode / num_episodes
+            progress = episode / params.num_episodes
             if progress < 0.8:  # Keep high temperature for 80% of episodes
-                temp = temperature
+                temp = params.temperature
             else:
                 # Gradually decrease temperature in last 20% of episodes
-                temp = temperature * (1 - (progress - 0.8) / 0.2)
+                temp = params.temperature * (1 - (progress - 0.8) / 0.2)
                 temp = max(0.5, temp)  # Don't go below 0.5 to maintain some exploration
 
             # 50% chance to play against a previous model if available
             if model_pool and random.random() < 0.70:
                 # Create opponent agent and load random previous model
-                opponent = Connect4Agent(num_simulations=sims, c_puct=2.0)  # Same settings for opponent
+                opponent = params.init_agent()  # Same settings for opponent
                 opponent_state = random.choice(model_pool)
                 opponent.load_state_dict(opponent_state)
-                game_history = play_game(current_agent, opponent, temp)
+                game_history = play_game(current_agent, opponent, params.use_discounting, temp)
             else:
-                game_history = play_self_play_game(current_agent, temp)
+                game_history = play_self_play_game(current_agent, params.use_discounting, temp)
 
             game_histories.append(game_history)
             episode_lengths.append(len(game_history))
@@ -235,8 +234,8 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
 
         # Train network on collected games
         epoch_losses = []
-        for epoch in tqdm(range(num_epochs), desc="Training epochs"):
-            result = train_network(current_agent, game_histories, batch_size)
+        for _ in tqdm(range(params.num_epochs), desc="Training epochs"):
+            result = train_network(current_agent, game_histories, params.batch_size)
             if result is not None:
                 total_loss, policy_loss, value_loss = result
                 metrics['total_loss'].append(total_loss)
@@ -305,16 +304,12 @@ def save_metrics(metrics, i):
         f.write("total_loss,policy_loss,value_loss,episode_lengths,wins,draws,losses\n")
         for i in range(len(metrics['total_loss'])):
             f.write(
-                f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics["draws"][i]},{metrics["losses"][i]}\n")
+                f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},"
+                f"{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics["draws"][i]},{metrics["losses"][i]}\n")
 
 
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        num_iterations=40,  # More iterations for thorough learning
-        num_episodes=30,  # Fewer but higher quality episodes
-        num_epochs=8,  # Fewer epochs to prevent overfitting
-        batch_size=32,  # Keep batch size moderate
-        temperature=1.1,  # Higher temperature for better exploration
-        sims=100
+        Hyperparameters(1)
     )
