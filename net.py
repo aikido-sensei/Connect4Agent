@@ -83,7 +83,7 @@ class Connect4Net(nn.Module):
         self.policy_conv = nn.Conv2d(64, 32, 1)
         self.policy_bn = nn.BatchNorm2d(32)
         self.policy_fc = nn.Linear(32 * 6 * 7, 7)
-        self.policy_lsm = nn.LogSoftmax(dim=1)
+        self.policy_lsm = nn.Softmax(dim=1)
 
         # Value head
         self.value_conv = nn.Conv2d(64, 3, 1)
@@ -113,7 +113,7 @@ class Connect4Net(nn.Module):
 
         # Value head
         value = F.relu(self.value_bn(self.value_conv(x)))
-        value = value.view(-1, 32 * 6 * 7)
+        value = value.view(-1, 3 * 6 * 7)
         value = F.relu(self.value_fc1(value))
         value = torch.tanh(self.value_fc2(value))
 
