@@ -44,7 +44,7 @@ def make_move(agent, board, current_player, game_history, move_count, temperatur
 
     if winning_move(board, current_player):
         game_over = True
-        value = 1.0
+        value = discount_value(1, move_count)
     elif is_draw(board):
         game_over = True
         value = 0  # Draws are neutral
@@ -126,7 +126,6 @@ def train_network(agent, game_histories, batch_size=32):
     policies = np.array([history['policy'] for history in batch])
     values = np.array([history['value'] for history in batch])
     values = values.reshape(-1, 1)
-    print(states.shape, policies.shape, values.shape)
     # Train network
     return agent.train(states, policies, values, batch_size)
 
@@ -312,7 +311,7 @@ def save_metrics(metrics, i):
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        num_iterations=100,  # More iterations for thorough learning
+        num_iterations=40,  # More iterations for thorough learning
         num_episodes=30,  # Fewer but higher quality episodes
         num_epochs=8,  # Fewer epochs to prevent overfitting
         batch_size=32,  # Keep batch size moderate

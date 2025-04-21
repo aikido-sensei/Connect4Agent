@@ -1,65 +1,7 @@
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import math
-from collections import defaultdict
 from board import *
 from net import Connect4Net
 from monte_carlo import Node
-
-# class Connect4Net(nn.Module):
-#     """Neural network following AlphaGo Zero architecture with both policy and value heads"""
-#     def __init__(self):
-#         super(Connect4Net, self).__init__()
-#         # Common layers - now expect 2 input channels
-#         self.conv1 = nn.Conv2d(2, 64, 3, padding=1)  # Changed from 1 to 2 input channels
-#         self.bn1 = nn.BatchNorm2d(64)
-#         self.conv2 = nn.Conv2d(64, 64, 3, padding=1)
-#         self.bn2 = nn.BatchNorm2d(64)
-#         self.conv3 = nn.Conv2d(64, 64, 3, padding=1)
-#         self.bn3 = nn.BatchNorm2d(64)
-#
-#         # Dropout layers
-#         self.dropout = nn.Dropout(0.3)
-#
-#         # Policy head
-#         self.policy_conv = nn.Conv2d(64, 32, 1)
-#         self.policy_bn = nn.BatchNorm2d(32)
-#         self.policy_fc = nn.Linear(32 * 6 * 7, 7)
-#
-#         # Value head
-#         self.value_conv = nn.Conv2d(64, 32, 1)
-#         self.value_bn = nn.BatchNorm2d(32)
-#         self.value_fc1 = nn.Linear(32 * 6 * 7, 64)
-#         self.value_fc2 = nn.Linear(64, 1)
-#
-#     def forward(self, x):
-#         # Shared layers
-#         x = F.relu(self.bn1(self.conv1(x)))
-#         x = self.dropout(x)
-#         x = F.relu(self.bn2(self.conv2(x)))
-#         x = self.dropout(x)
-#         x = F.relu(self.bn3(self.conv3(x)))
-#         x = self.dropout(x)
-#
-#         # Policy head
-#         policy = F.relu(self.policy_bn(self.policy_conv(x)))
-#         policy = self.dropout(policy)
-#         policy = policy.view(-1, 32 * 6 * 7)
-#         policy = self.policy_fc(policy)
-#         policy = F.softmax(policy, dim=1)
-#
-#         # Value head
-#         value = F.relu(self.value_bn(self.value_conv(x)))
-#         value = self.dropout(value)
-#         value = value.view(-1, 32 * 6 * 7)
-#         value = F.relu(self.value_fc1(value))
-#         value = self.dropout(value)
-#         value = torch.tanh(self.value_fc2(value))
-#
-#         return policy, value
-#
 
 
 class Connect4Agent:
@@ -93,7 +35,6 @@ class Connect4Agent:
         player_tensor = torch.full([6, 7], fill, dtype=torch.float32)
 
         state_tensor = torch.stack((current_player_tensor, opp_player_tensor, player_tensor), dim=-1)
-        #print("\n\n\nbbbbb", state_tensor.size())
         return state_tensor.to(self.device)
     
     def search(self, root_state, current_player):
@@ -162,9 +103,9 @@ class Connect4Agent:
                 
                 if terminal:
                     if is_win:
-                        value = 1.0
+                        value = discount_value(1, move_count)
                     elif is_loss:
-                        value = -1.0
+                        value = -discount_value(1, move_count)
                     else:  # Draw
                         value = 0  # Draws are neutral
             
@@ -208,28 +149,16 @@ class Connect4Agent:
         action_probs[actions] = visit_count_distribution
         return action_probs
     
-    def make_move(self, board, current_player=1):
-        """Interface method for the game environment"""
-        valid_moves = get_valid_moves(board)
-        if not valid_moves:
-            return -1
-        
-        # Use MCTS to get action probabilities
-        action_probs = self.get_action_probs(board, current_player, temperature=0)  # Use temperature=0 for actual play
-        return np.argmax(action_probs)
-    
     def train(self, states, policies, values, batch):
         """Train the network on a batch of data"""
         states = torch.FloatTensor(states).to(self.device)
         target_policies = torch.FloatTensor(policies).to(self.device)
         target_values = torch.FloatTensor(values).to(self.device)
-        print("In from play:", states.shape, target_policies.shape, target_values.shape)
 
         # Get predictions
         policy_pred, value_pred = self.network(states)
-        policy_pred = torch.detach(policy_pred)#.cpu().numpy()
-        value_pred = torch.detach(value_pred)#.cpu().numpy()
-        print(policy_pred, target_policies)
+        policy_pred = torch.detach(policy_pred)
+        value_pred = torch.detach(value_pred)
         # Compute losses with L2 regularization
         policy_loss = -torch.sum(target_policies * torch.log(policy_pred + 1e-8)) / batch
 
@@ -270,36 +199,3 @@ class Connect4Agent:
         """Load model weights"""
         checkpoint = torch.load(path)
         self.load_state_dict(checkpoint)
-
-# def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0):
-#     """Main training loop following AlphaGo Zero methodology"""
-#     agent = Connect4Agent(num_simulations=100)  # More simulations for better move selection
-#
-#     # Training metrics
-#     metrics = {
-#         'policy_loss': [],
-#         'value_loss': [],
-#         'total_loss': [],
-#         'episode_lengths': []
-#     }
-#
-#     # Training loop
-#     for iteration in range(num_iterations):
-#         for episode in range(num_episodes):
-#             # Training episode
-#             for epoch in range(num_epochs):
-#                 # Training epoch
-#                 for batch in range(0, len(states), batch_size):
-#                     # Training batch
-#                     states_batch = states[batch:batch+batch_size]
-#                     policies_batch = policies[batch:batch+batch_size]
-#                     values_batch = values[batch:batch+batch_size]
-#
-#                     loss, policy_loss, value_loss = agent.train(states_batch, policies_batch, values_batch)
-#                     print(f"Iteration {iteration}, Episode {episode}, Epoch {epoch}, Batch {batch}, Loss: {loss}, Policy Loss: {policy_loss}, Value Loss: {value_loss}")
-#
-#             # Save model after each iteration
-#             agent.save_model(f"model_iteration_{iteration}.pth")
-#
-#         # Save model after all iterations
-#         agent.save_model("final_model.pth")
