@@ -3,6 +3,7 @@ import sys
 import numpy as np
 from connect4_agent import Connect4Agent
 import torch
+from board import *
 
 # Initialize Pygame
 pygame.init()
@@ -32,20 +33,6 @@ MENU = 0
 PLAYING = 1
 GAME_OVER = 2
 
-def create_board():
-    return np.zeros((6, 7))
-
-def drop_piece(board, row, col, piece):
-    board[row][col] = piece
-
-def is_valid_location(board, col):
-    return board[0][col] == 0
-
-def get_next_open_row(board, col):
-    for r in range(5, -1, -1):
-        if board[r][col] == 0:
-            return r
-    return -1
 
 def draw_board(board):
     # Draw the board background
@@ -181,7 +168,7 @@ while True:
             drop_piece(board, row, col, 1)
             
             # Check for win
-            if agent.winning_move(board, 1):
+            if winning_move(board, 1):
                 winner = 1
                 game_state = GAME_OVER
             elif len([col for col in range(7) if is_valid_location(board, col)]) == 0:
@@ -226,7 +213,7 @@ while True:
                 piece = 1 if turn == 0 else 2
                 drop_piece(board, row, col, piece)
 
-                if agent.winning_move(board, piece):
+                if winning_move(board, piece):
                     winner = piece
                     game_state = GAME_OVER
                 elif len([col for col in range(7) if is_valid_location(board, col)]) == 0:
