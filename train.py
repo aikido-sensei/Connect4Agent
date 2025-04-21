@@ -103,9 +103,9 @@ def play_self_play_game(agent, temperature=1.0):
         
         if agent.winning_move(board, current_player):
             game_over = True
-            # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)
-            progress = move_count / 42  # How far into the game are we
-            value = 1.0 - progress * 0.7  # Decrease reward for longer games
+            progress = move_count / 42
+            value = 0.7 + progress * 0.3  # Ranges from 0.7 to 1.0, slightly encourages longer games
+
         elif is_draw(board):
             game_over = True
             value = 0  # Draws are neutral
@@ -365,9 +365,9 @@ def play_game(agent1, agent2, temperature=1.0):
         
         if current_agent.winning_move(board, current_player):
             game_over = True
-            # Winning quickly is better (max reward 1.0 for quick win, min 0.3 for slow win)
-            progress = move_count / 42  # How far into the game are we
-            value = 1.0 - progress * 0.7  # Decrease reward for longer games
+            progress = move_count / 42
+            value = 0.7 + progress * 0.6  # Ranges from 0.7 to 1.0, slightly encourages longer games
+
         elif is_draw(board):
             game_over = True
             value = 0  # Draws are neutral
