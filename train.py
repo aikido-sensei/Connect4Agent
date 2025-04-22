@@ -60,12 +60,12 @@ def make_move(agent: Connect4Agent, board: np.ndarray, current_player: int, game
     return game_over
 
 
-def play_self_play_game(agent, temperature):
+def play_self_play_game(agent, temperature, starting_player):
     """Play a self-play game and return game history"""
     board = create_board()
     game_history = []
-    current_player = random.choice([1, 2])  # Randomly choose starting player
     move_count = 0
+    current_player = starting_player
 
     while True:
         move_count += 1
@@ -75,12 +75,13 @@ def play_self_play_game(agent, temperature):
         current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
 
 
-def play_game(agent1, agent2, temperature):
+def play_game(agent1, agent2, temperature, starting_player):
     """Play a game between two agents"""
     board = create_board()
     game_history = []
-    current_player = random.choice([1, 2])  # Randomly choose starting player
+    # current_player = random.choice([1, 2])  # Randomly choose starting player
     move_count = 0
+    current_player = starting_player
 
     while True:
         move_count += 1
@@ -184,15 +185,22 @@ def train_agent(params: Hyperparameters):
                 temp = params.temperature * (1 - (progress - 0.8) / 0.2)
                 temp = max(0.5, temp)  # Don't go below 0.5 to maintain some exploration
 
+            # Randomly choose starting player. Also determines agent we care about
+            current_player = random.choice([1, 2])
+
             # 50% chance to play against a previous model if available
             if model_pool and random.random() < 0.70:
+
                 # Create opponent agent and load random previous model
                 opponent = params.init_agent()  # Same settings for opponent
                 opponent_state = random.choice(model_pool)
                 opponent.load_state_dict(opponent_state)
-                game_history = play_game(current_agent, opponent, temp)
+                if current_player == 1:
+                    game_history = play_game(current_agent, opponent, temp, current_player)
+                else:
+                    game_history = play_game(opponent, current_agent, temp, current_player)
             else:
-                game_history = play_self_play_game(current_agent, temp)
+                game_history = play_self_play_game(current_agent, temp, current_player)
 
             game_histories.append(game_history)
             episode_lengths.append(len(game_history))
@@ -205,16 +213,28 @@ def train_agent(params: Hyperparameters):
                 metrics["draws"].append(1)
                 metrics["wins"].append(0)
                 metrics["losses"].append(0)
-            elif final_state['value'] > 0:  # Win
-                wins += 1
-                metrics["draws"].append(0)
-                metrics["wins"].append(1)
-                metrics["losses"].append(0)
-            else:  # Loss
-                losses += 1
-                metrics["draws"].append(0)
-                metrics["wins"].append(0)
-                metrics["losses"].append(1)
+            elif final_state['current_player'] == current_player:  # current player ended the game
+                if final_state['value'] > 0:  # Win
+                    wins += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(1)
+                    metrics["losses"].append(0)
+                else:  # Loss
+                    losses += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(0)
+                    metrics["losses"].append(1)
+            else:                                               # opponent ended the game
+                if final_state['value'] > 0:  # Win
+                    losses += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(0)
+                    metrics["losses"].append(1)
+                else:  # Loss
+                    wins += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(1)
+                    metrics["losses"].append(0)
 
         # Calculate statistics
         total_games = wins + losses + draws
