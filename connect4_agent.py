@@ -72,10 +72,17 @@ class Connect4Agent:
                 next_state = get_next_state(state, player, move)
                 if winning_move(next_state, player):
                     w_move = move
+                    # If there's a winning move, only expand that one with 100% probability
+                    policy = np.zeros(7)
+                    policy[w_move] = 1.0
+                    value = 1.0  # Maximum value for a win
+                    terminal = True
+                    is_win = True
+                    child = Node(player, next_state, move_count + 1, prior=policy[w_move])
+                    node.children[w_move] = child
                     break
             
             if w_move is not None:
-                # If there's a winning move, only expand that one with 100% probability
                 policy = np.zeros(7)
                 policy[w_move] = 1.0
                 value = 1.0  # Maximum value for a win
