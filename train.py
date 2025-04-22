@@ -9,11 +9,11 @@ from hyperparameters import Hyperparameters
 
 
 def make_move(agent: Connect4Agent, board: np.ndarray, current_player: int, game_history: list,
-              move_count: int, temperature: float, use_discounting: bool):
+              move_count: int, temperature: float):
     # Get current state
     state = board.copy()
     # Get action probabilities from MCTS
-    action_probs = agent.get_action_probs(state, current_player, temperature, use_discounting)
+    action_probs = agent.get_action_probs(state, current_player, temperature)
 
     # Store state and probabilities
     game_history.append({
@@ -43,7 +43,7 @@ def make_move(agent: Connect4Agent, board: np.ndarray, current_player: int, game
 
     if winning_move(board, current_player):
         game_over = True
-        value = discount_value(1, move_count, use_discounting)
+        value = discount_value(1, move_count, agent.use_discounting)
     elif is_draw(board):
         game_over = True
         value = 0  # Draws are neutral
@@ -60,7 +60,7 @@ def make_move(agent: Connect4Agent, board: np.ndarray, current_player: int, game
     return game_over
 
 
-def play_self_play_game(agent, use_discounting: bool, temperature):
+def play_self_play_game(agent, temperature):
     """Play a self-play game and return game history"""
     board = create_board()
     game_history = []
@@ -69,13 +69,13 @@ def play_self_play_game(agent, use_discounting: bool, temperature):
 
     while True:
         move_count += 1
-        over = make_move(agent, board, current_player, game_history, move_count, temperature, use_discounting)
+        over = make_move(agent, board, current_player, game_history, move_count, temperature)
         if over:
             return game_history
         current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
 
 
-def play_game(agent1, agent2, use_discounting: bool, temperature):
+def play_game(agent1, agent2, temperature):
     """Play a game between two agents"""
     board = create_board()
     game_history = []
@@ -85,7 +85,7 @@ def play_game(agent1, agent2, use_discounting: bool, temperature):
     while True:
         move_count += 1
         current_agent = agent1 if current_player == 1 else agent2
-        over = make_move(current_agent, board, current_player, game_history, move_count, temperature, use_discounting)
+        over = make_move(current_agent, board, current_player, game_history, move_count, temperature)
         if over:
             return game_history
         current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
@@ -190,9 +190,9 @@ def train_agent(params: Hyperparameters):
                 opponent = params.init_agent()  # Same settings for opponent
                 opponent_state = random.choice(model_pool)
                 opponent.load_state_dict(opponent_state)
-                game_history = play_game(current_agent, opponent, params.use_discounting, temp)
+                game_history = play_game(current_agent, opponent, temp)
             else:
-                game_history = play_self_play_game(current_agent, params.use_discounting, temp)
+                game_history = play_self_play_game(current_agent, temp)
 
             game_histories.append(game_history)
             episode_lengths.append(len(game_history))
@@ -311,5 +311,5 @@ def save_metrics(metrics, i):
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        Hyperparameters(1)
+        Hyperparameters(3)
     )

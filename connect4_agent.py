@@ -5,7 +5,7 @@ from monte_carlo import Node
 
 
 class Connect4Agent:
-    def __init__(self, nnet: nn.Module, device, num_simulations=100, c_puct=1.0):
+    def __init__(self, nnet: nn.Module, device, use_discounting, num_simulations=100, c_puct=1.0):
         self.device = device
         self.network = nnet
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-6)
@@ -13,6 +13,7 @@ class Connect4Agent:
         
         self.num_simulations = num_simulations
         self.c_puct = c_puct
+        self.use_discounting = use_discounting
         
     def get_state_tensor(self, board, current_player):
         """Convert board to tensor state with player information
@@ -37,7 +38,7 @@ class Connect4Agent:
         state_tensor = torch.stack((current_player_tensor, opp_player_tensor, player_tensor), dim=-1)
         return state_tensor.to(self.device)
     
-    def search(self, root_state, current_player, use_discounting):
+    def search(self, root_state, current_player):
         """Perform MCTS search starting from root state"""
         root = Node(current_player, root_state.copy(), 0, prior=0)
         
@@ -103,9 +104,9 @@ class Connect4Agent:
                 
                 if terminal:
                     if is_win:
-                        value = discount_value(1, move_count, use_discounting)
+                        value = discount_value(1, move_count, self.use_discounting)
                     elif is_loss:
-                        value = -discount_value(1, move_count, use_discounting)
+                        value = -discount_value(1, move_count, self.use_discounting)
                     else:  # Draw
                         value = 0  # Draws are neutral
             
@@ -129,9 +130,9 @@ class Connect4Agent:
         """Select child node using PUCT algorithm"""
         return node.get_best_child(self.c_puct)
 
-    def get_action_probs(self, state, current_player, temperature=1.0, use_discounting=True):
+    def get_action_probs(self, state, current_player, temperature=1.0):
         """Get action probabilities after MCTS search"""
-        root = self.search(state, current_player, use_discounting)
+        root = self.search(state, current_player)
         visit_counts = np.array([child.visit_count for child in root.children.values()])
         actions = list(root.children.keys())
         

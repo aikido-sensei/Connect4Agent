@@ -109,13 +109,14 @@ screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Connect 4")
 
 # Load the trained agent
-params = Hyperparameters(1)
+params = Hyperparameters(0)
 agent = params.init_agent()
-try:
-    agent.load_model('models/model_latest.pth')
-    print("Loaded trained model successfully!")
-except:
-    print("No trained model found, using untrained model")
+params.load_by_config(agent)
+# try:
+#     agent.load_model('models/model_latest.pth')
+#     print("Loaded trained model successfully!")
+# except:
+#     print("No trained model found, using untrained model")
 
 # Game state variables
 game_state = MENU
