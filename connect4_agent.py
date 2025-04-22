@@ -165,8 +165,8 @@ class Connect4Agent:
 
         # Get predictions
         policy_pred, value_pred = self.network(states)
-        policy_pred = torch.detach(policy_pred)
-        value_pred = torch.detach(value_pred)
+        # policy_pred = torch.detach(policy_pred)
+        # value_pred = torch.detach(value_pred)
         # Compute losses with L2 regularization
         policy_loss = -torch.sum(target_policies * torch.log(policy_pred + 1e-8)) / batch
 
