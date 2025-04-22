@@ -109,7 +109,7 @@ screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Connect 4")
 
 # Load the trained agent
-params = Hyperparameters(0)
+params = Hyperparameters(3)
 agent = params.init_agent()
 params.load_by_config(agent)
 # try:

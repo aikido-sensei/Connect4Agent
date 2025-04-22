@@ -153,7 +153,7 @@ def train_agent(params: Hyperparameters):
     }
 
     # Create directory for saving models
-    os.makedirs('models', exist_ok=True)
+    os.makedirs(f'models/config_{params.config}/', exist_ok=True)
 
     # Keep track of best loss
     best_loss = float('inf')
@@ -165,8 +165,8 @@ def train_agent(params: Hyperparameters):
         print(f"{'=' * 50}")
 
         if iteration % 10 == 0:
-            current_agent.save_model('models/model_latest_' + str(iteration) + '.pth')
-            save_metrics(metrics, iteration)
+            current_agent.save_model(f'models/config_{params.config}/model_latest_' + str(iteration) + '.pth')
+            save_metrics(metrics, iteration, params)
 
         # Collect self-play games
         game_histories = []
@@ -278,17 +278,17 @@ def train_agent(params: Hyperparameters):
                 print(f"\nModel added to pool (pool size: {len(model_pool)})")
 
     # Save only the final model
-    current_agent.save_model('models/model_latest.pth')
+    current_agent.save_model(f'models/config_{params.config}/model_latest.pth')
 
     # Create one comprehensive plot at the end
-    save_metrics(metrics, "")
+    save_metrics(metrics, "", params)
 
     print("\nTraining completed!")
-    print("Final model saved as: models/model_latest.pth")
-    print("Training curves saved as: models/training_curves_.png")
+    print(f"Final model saved as: models/config_{params.config}/model_latest.pth")
+    print(f"Training curves saved as: models/config_{params.config}/training_curves_.png")
 
 
-def save_metrics(metrics, i):
+def save_metrics(metrics, i, params:Hyperparameters):
     # Create one comprehensive plot at the end
     plt.figure(figsize=(15, 5))
 
@@ -317,7 +317,7 @@ def save_metrics(metrics, i):
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig(f'models/training_curves_{i}.png')
+    plt.savefig(f'models/config_{params.config}/training_curves_{i}.png')
     plt.close()
 
     with open(f'models/csv_data_{i}', 'w') as f:
@@ -331,5 +331,5 @@ def save_metrics(metrics, i):
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        Hyperparameters(3)
+        Hyperparameters(1)
     )
