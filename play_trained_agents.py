@@ -1,3 +1,4 @@
+import time
 from connect4_agent import Connect4Agent
 import matplotlib.pyplot as plt
 import os
@@ -41,20 +42,11 @@ def make_move(agent: Connect4Agent, board: np.ndarray, current_player: int, game
 
     if winning_move(board, current_player):
         game_over = True
-        value = discount_value(1, move_count, agent.use_discounting)
+        print(f"WIN for player {current_player} in {move_count} moves.")
     elif is_draw(board):
         game_over = True
-        value = 0  # Draws are neutral
+        print("DRAW")
 
-    if game_over:
-        # Update values for all positions in the game
-        for history in game_history:
-            if value == 0:  # Draw
-                history['value'] = 0
-            elif history['current_player'] == current_player:
-                history['value'] = value  # Winner gets positive value
-            else:
-                history['value'] = -value  # Loser gets negative of winner's value
     return game_over
 
 
@@ -68,65 +60,47 @@ def play_game(agent1, agent2, current_player, temperature):
         move_count += 1
         current_agent = agent1 if current_player == 1 else agent2
         over = make_move(current_agent, board, current_player, game_history, move_count, temperature)
+        print(board, "\n")
+        time.sleep(0.5)
         if over:
-            return game_history
+            return move_count
         current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
 
 
 def train_agent(params1: Hyperparameters, params2: Hyperparameters):
     """Main training loop following AlphaGo Zero methodology"""
-    iters = 100
+    # Only one game is played since the agents will exploit their policy
 
-    # Collect game stats
-    episode_lengths = []
-    wins = 0
-    losses = 0
-    draws = 0
+    # initialize agents based on hyperparameters
+    agent1 = params1.init_agent()
+    params1.load_by_config(agent1)
+    agent2 = params2.init_agent()
+    params2.load_by_config(agent2)
 
-    # Training iterations
-    for iteration in range(iters):
-        # initialize agents based on hyperparameters
-        agent1 = params1.init_agent()
-        params1.load_by_config(agent1)
-        agent2 = params2.init_agent()
-        params2.load_by_config(agent2)
+    print("|||||||||||||\n\n")
+    print("player 1 is config", params1.config)
+    print("player 2 is config", params2.config)
+    # play with temp set to 0, since we want pure exploitation
+    move_count = play_game(agent1, agent2, 1, temperature=0)
 
-        print(f"\n{'=' * 50}")
-        print(f"Game {iteration + 1}/{iters}")
-        print(f"{'=' * 50}")
+    # reinitialize agent entirely, just in case
+    agent1 = params1.init_agent()
+    params1.load_by_config(agent1)
+    agent2 = params2.init_agent()
+    params2.load_by_config(agent2)
 
-        for player_start in [1, 2]:
-            # play with temp set to 0, since we want pure exploitation
-            game_history = play_game(agent1, agent2, player_start, temperature=0)
+    print("|||||||||||||\n\n")
+    print("player 1 is config", params2.config)
+    print("player 2 is config", params1.config)
+    # play with temp set to 0, since we want pure exploitation
+    move_count = play_game(agent2, agent1, 1, temperature=0)
 
-            episode_lengths.append(len(game_history))
-
-            # Count game outcomes
-            final_state = game_history[-1]
-            if final_state['value'] == 0:  # Draw
-                draws += 1
-            elif final_state['value'] > 0:  # Win
-                wins += 1
-            else:  # Loss
-                losses += 1
-
-        # Calculate statistics
-        total_games = wins + losses + draws
-        win_rate = wins / total_games
-        draw_rate = draws / total_games
-        loss_rate = losses / total_games
-
-        print(f"\nGame Statistics:")
-        print(f"Average game length: {np.mean(episode_lengths):.1f} moves")
-        print(f"Win rate: {win_rate * 100:.1f}%")
-        print(f"Draw rate: {draw_rate * 100:.1f}%")
-        print(f"Loss rate: {loss_rate * 100:.1f}%")
 
 
 
 if __name__ == "__main__":
     # Start training with improved parameters
     train_agent(
-        Hyperparameters(1),
+        Hyperparameters(2),
         Hyperparameters(3)
     )
