@@ -1,3 +1,4 @@
+import argparse
 import time
 from connect4_agent import Connect4Agent
 import matplotlib.pyplot as plt
@@ -60,14 +61,15 @@ def play_game(agent1, agent2, current_player, temperature):
         move_count += 1
         current_agent = agent1 if current_player == 1 else agent2
         over = make_move(current_agent, board, current_player, game_history, move_count, temperature)
-        print(board, "\n")
-        time.sleep(0.5)
+        if args.progress:
+            print(board, "\n")
+            time.sleep(0.5)
         if over:
             return move_count
         current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
 
 
-def train_agent(params1: Hyperparameters, params2: Hyperparameters):
+def evaluate(params1: Hyperparameters, params2: Hyperparameters):
     """Main training loop following AlphaGo Zero methodology"""
     # Only one game is played since the agents will exploit their policy
 
@@ -96,11 +98,15 @@ def train_agent(params1: Hyperparameters, params2: Hyperparameters):
     move_count = play_game(agent2, agent1, 1, temperature=0)
 
 
-
-
 if __name__ == "__main__":
-    # Start training with improved parameters
-    train_agent(
-        Hyperparameters(2),
-        Hyperparameters(3)
+    parser = argparse.ArgumentParser(
+        description="Pit two agents against each other. The hyperparameters in each config are described in the paper.")
+    parser.add_argument("--config1", type=int, choices=[0, 1, 2, 3], default=0, help="First config.")
+    parser.add_argument("--config2", type=int, choices=[0, 1, 2, 3], default=0, help="Second config.")
+    parser.add_argument("--progress", type=bool, default=False, help="Show board as game is played.")
+
+    args = parser.parse_args()
+    evaluate(
+        Hyperparameters(args.config1),
+        Hyperparameters(args.config2)
     )

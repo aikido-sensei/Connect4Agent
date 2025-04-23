@@ -1,3 +1,5 @@
+import argparse
+
 import pygame
 import sys
 from connect4_agent import Connect4Agent
@@ -104,12 +106,17 @@ def draw_game_over(winner, board):
     return menu_button
 
 
+parser = argparse.ArgumentParser(
+        description="Play against a connect-4 agent. The hyperparameters in each config are described in the paper.")
+parser.add_argument("--config", type=int, choices=[0, 1, 2, 3], default=0, help="Config to play against.")
+args = parser.parse_args()
+
 # Set up the display
 screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Connect 4")
 
 # Load the trained agent
-params = Hyperparameters(3)
+params = Hyperparameters(args.config)
 agent = params.init_agent()
 params.load_by_config(agent)
 # try:

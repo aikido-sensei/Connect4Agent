@@ -1,3 +1,5 @@
+import argparse
+
 from connect4_agent import Connect4Agent
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -329,7 +331,12 @@ def save_metrics(metrics, i, params:Hyperparameters):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train a connect-4 agent. The hyperparameters in each config are described in the paper.")
+    parser.add_argument("--config", type=int, choices=[0, 1, 2, 3], default=0, help="Config to train")
+
+    args = parser.parse_args()
     # Start training with improved parameters
     train_agent(
-        Hyperparameters(1)
+        Hyperparameters(args.config)
     )
