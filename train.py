@@ -322,7 +322,7 @@ def save_metrics(metrics, i, params:Hyperparameters):
     plt.savefig(f'models/config_{params.config}/training_curves_{i}.png')
     plt.close()
 
-    with open(f'models/csv_data_{i}', 'w') as f:
+    with open(f'models/config_{params.config}/csv_data_{i}', 'w') as f:
         f.write("total_loss,policy_loss,value_loss,episode_lengths,wins,draws,losses\n")
         for i in range(len(metrics['total_loss'])):
             f.write(
