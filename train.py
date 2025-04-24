@@ -341,12 +341,14 @@ def save_metrics(metrics, i, params):
     plt.savefig(f'models/moves_hist/training_curves_{i}.png')
     plt.close()
 
-    with open(f'models/moves_hist/csv_data_{i}', 'w') as f:
-        f.write("total_loss,policy_loss,value_loss,episode_lengths,wins,draws,losses\n")
-        for i in range(len(metrics['total_loss'])):
-            f.write(
-                f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},"
-                f"{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics['draws'][i]},{metrics['losses'][i]}\n")
+    with open(f'models/moves_hist/run_data_{i}.txt', 'w') as f:
+        f.write("total_loss," + ",".join(map(str, metrics['total_loss'])) + "\n")
+        f.write("policy_loss," + ','.join(map(str, metrics['policy_loss'])) + "\n")
+        f.write("value_loss," + ','.join(map(str, metrics['value_loss'])) + "\n")
+        f.write("episode_lengths," + ','.join(map(str, metrics['episode_lengths'])) + "\n")
+        f.write("wins," + ','.join(map(str, metrics['wins'])) + "\n")
+        f.write("draws," + ','.join(map(str, metrics['draws'])) + "\n")
+        f.write("losses," + ','.join(map(str, metrics['losses'])) + "\n")
 
 
 
