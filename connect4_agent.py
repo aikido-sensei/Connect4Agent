@@ -65,8 +65,8 @@ from monte_carlo import Node
 class Connect4Agent:
     def __init__(self, num_simulations=100, c_puct=1.0):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.network = Connect4Net(self.device)
-        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-6)
+        self.network = Connect4Net().to(self.device)
+        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, verbose=True)
         
         self.num_simulations = num_simulations
@@ -279,35 +279,3 @@ class Connect4Agent:
         checkpoint = torch.load(path)
         self.load_state_dict(checkpoint)
 
-# def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=32, temperature=1.0):
-#     """Main training loop following AlphaGo Zero methodology"""
-#     agent = Connect4Agent(num_simulations=100)  # More simulations for better move selection
-#
-#     # Training metrics
-#     metrics = {
-#         'policy_loss': [],
-#         'value_loss': [],
-#         'total_loss': [],
-#         'episode_lengths': []
-#     }
-#
-#     # Training loop
-#     for iteration in range(num_iterations):
-#         for episode in range(num_episodes):
-#             # Training episode
-#             for epoch in range(num_epochs):
-#                 # Training epoch
-#                 for batch in range(0, len(states), batch_size):
-#                     # Training batch
-#                     states_batch = states[batch:batch+batch_size]
-#                     policies_batch = policies[batch:batch+batch_size]
-#                     values_batch = values[batch:batch+batch_size]
-#
-#                     loss, policy_loss, value_loss = agent.train(states_batch, policies_batch, values_batch)
-#                     print(f"Iteration {iteration}, Episode {episode}, Epoch {epoch}, Batch {batch}, Loss: {loss}, Policy Loss: {policy_loss}, Value Loss: {value_loss}")
-#
-#             # Save model after each iteration
-#             agent.save_model(f"model_iteration_{iteration}.pth")
-#
-#         # Save model after all iterations
-#         agent.save_model("final_model.pth")

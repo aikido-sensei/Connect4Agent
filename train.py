@@ -194,7 +194,7 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
                 temp = max(0.5, temp)  # Don't go below 0.5 to maintain some exploration
 
             # 50% chance to play against a previous model if available
-            if model_pool and random.random() < 0.70:
+            if use_model_pool and model_pool and random.random() < 0.70:
                 # Create opponent agent and load random previous model
                 opponent = Connect4Agent(num_simulations=sims, c_puct=2.0)  # Same settings for opponent
                 # opponent_state = random.choice(model_pool)
