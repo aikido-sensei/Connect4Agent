@@ -1,4 +1,4 @@
-from connect4_agent import Connect4Agent
+from connect4_agent import Connect4Agent, RandomAgent
 import torch
 from net import NetWithResidual, NetWithoutResidual
 
@@ -41,8 +41,14 @@ class Hyperparameters:
         elif self.config == 2:
             nnet = NetWithoutResidual(device)
             return Connect4Agent(nnet, device, self.use_discounting, num_simulations=self.mcts_iters, c_puct=2.0)
+        elif self.config == -1:
+            stub = NetWithoutResidual(device)  # This nnet won't actually be used, we create one to avoid exceptions
+            return RandomAgent(stub, device)
 
     def load_by_config(self, agent: Connect4Agent):
+        if self.config == -1:
+            # Nothing to load for random agent
+            return
         path = f"models/config_{self.config}/model_latest.pth"
         print(f"Loading model from {path}")
 

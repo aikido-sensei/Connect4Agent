@@ -1,3 +1,4 @@
+import random
 import torch
 import torch.nn as nn
 from board import *
@@ -207,3 +208,40 @@ class Connect4Agent:
         """Load model weights"""
         checkpoint = torch.load(path)
         self.load_state_dict(checkpoint)
+
+
+class RandomAgent(Connect4Agent):
+    def __init__(self, nnet: nn.Module, device):
+        super().__init__(nnet, device, False)
+
+    def get_state_tensor(self, board, current_player):
+        pass
+
+    def search(self, root_state, current_player):
+        pass
+
+    def select_child(self, node):
+        pass
+
+    def get_action_probs(self, state, current_player, temperature=1.0):
+        """ Pick a random action"""
+        actions = get_valid_moves(state)
+        pick = random.choice(actions)
+        action_probs = np.zeros(7)
+        action_probs[pick] = 1
+        return action_probs
+
+    def train(self, states, policies, values, batch):
+        pass
+
+    def state_dict(self):
+        pass
+
+    def load_state_dict(self, state_dict):
+        pass
+
+    def save_model(self, path):
+        pass
+
+    def load_model(self, path):
+        pass
