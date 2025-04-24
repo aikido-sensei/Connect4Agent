@@ -65,12 +65,12 @@ def make_move(agent, board, current_player, game_history, move_count, temperatur
     return game_over
 
 
-def play_self_play_game(agent, temperature=1.0):
+def play_self_play_game(agent, temperature, starting_player):
     """Play a self-play game and return game history"""
     board = create_board()
     game_history = []
     move_history = []  # track past moves
-    current_player = random.choice([1, 2])  # randomly choose starting player
+    current_player = starting_player
     move_count = 0
 
     while True:
@@ -81,12 +81,12 @@ def play_self_play_game(agent, temperature=1.0):
         current_player = change_players(current_player)
 
 
-def play_game(agent1, agent2, temperature=1.0):
+def play_game(agent1, agent2, temperature, starting_player):
     """Play a game between two agents"""
     board = create_board()
     game_history = []
     move_history = []  # track past moves
-    current_player = random.choice([1, 2])
+    current_player = starting_player
     move_count = 0
 
     while True:
@@ -159,6 +159,14 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
         "losses": [],
         "wins": []
     }
+    params = {
+        'num_iterations': num_iterations,
+        'num_episodes': num_episodes,
+        'num_epochs': num_epochs,           
+        'batch_size': batch_size,        
+        'temperature': temperature, 
+        'sims': sims
+    }
 
     # Create directory for saving models
     os.makedirs('models', exist_ok=True)
@@ -173,8 +181,8 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
         print(f"{'=' * 50}")
 
         if iteration % 10 == 0:
-            current_agent.save_model('models/model_latest_' + str(iteration) + '.pth')
-            save_metrics(metrics, iteration)
+            current_agent.save_model('models/moves_hist/model_latest_' + str(iteration) + '.pth')
+            save_metrics(metrics, iteration, params)
 
         # Collect self-play games
         game_histories = []
@@ -192,17 +200,23 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
                 # Gradually decrease temperature in last 20% of episodes
                 temp = temperature * (1 - (progress - 0.8) / 0.2)
                 temp = max(0.5, temp)  # Don't go below 0.5 to maintain some exploration
+            
+            # Randomly choose starting player. Also determines agent we care about
+            current_player = random.choice([1, 2])
 
             # 50% chance to play against a previous model if available
-            if use_model_pool and model_pool and random.random() < 0.70:
+            if model_pool and random.random() < 0.70:
                 # Create opponent agent and load random previous model
                 opponent = Connect4Agent(num_simulations=sims, c_puct=2.0)  # Same settings for opponent
                 # opponent_state = random.choice(model_pool)
                 opponent_state = model_pool[0][1] # select current best model in the pool, new
                 opponent.load_state_dict(opponent_state)
-                game_history = play_game(current_agent, opponent, temp)
+                if current_player == 1:
+                    game_history = play_game(current_agent, opponent, temp, current_player)
+                else:
+                    game_history = play_game(opponent, current_agent, temp, current_player)
             else:
-                game_history = play_self_play_game(current_agent, temp)
+                game_history = play_self_play_game(current_agent, temp, current_player)
 
             game_histories.append(game_history)
             episode_lengths.append(len(game_history))
@@ -215,16 +229,28 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
                 metrics["draws"].append(1)
                 metrics["wins"].append(0)
                 metrics["losses"].append(0)
-            elif final_state['value'] > 0:  # Win
-                wins += 1
-                metrics["draws"].append(0)
-                metrics["wins"].append(1)
-                metrics["losses"].append(0)
-            else:  # Loss
-                losses += 1
-                metrics["draws"].append(0)
-                metrics["wins"].append(0)
-                metrics["losses"].append(1)
+            elif final_state['current_player'] == current_player:  # current player ended the game
+                if final_state['value'] > 0:  # Win
+                    wins += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(1)
+                    metrics["losses"].append(0)
+                else:  # Loss
+                    losses += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(0)
+                    metrics["losses"].append(1)
+            else:                                               # opponent ended the game
+                if final_state['value'] > 0:  # Win
+                    losses += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(0)
+                    metrics["losses"].append(1)
+                else:  # Loss
+                    wins += 1
+                    metrics["draws"].append(0)
+                    metrics["wins"].append(1)
+                    metrics["losses"].append(0)
 
         # Calculate statistics
         total_games = wins + losses + draws
@@ -273,17 +299,17 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
                 print(f"\nModel added to pool (pool size: {len(model_pool)})")
 
     # Save only the final model
-    current_agent.save_model('models/model_latest.pth')
+    current_agent.save_model('models/moves_hist/model_latest_moveshist.pth')
 
     # Create one comprehensive plot at the end
-    save_metrics(metrics, "")
-
+    save_metrics(metrics, "", params)
+        
     print("\nTraining completed!")
-    print("Final model saved as: models/model_latest.pth")
-    print("Training curves saved as: models/training_curves_.png")
+    print("Final model saved as: models/moves_hist/model_latest.pth")
+    print("Training curves saved as: models/moves_hist/training_curves.png")
 
 
-def save_metrics(metrics, i):
+def save_metrics(metrics, i, params):
     # Create one comprehensive plot at the end
     plt.figure(figsize=(15, 5))
 
@@ -312,14 +338,16 @@ def save_metrics(metrics, i):
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig(f'models/training_curves_{i}.png')
+    plt.savefig(f'models/moves_hist/training_curves_{i}.png')
     plt.close()
 
-    with open(f'models/csv_data_{i}', 'w') as f:
+    with open(f'models/moves_hist/csv_data_{i}', 'w') as f:
         f.write("total_loss,policy_loss,value_loss,episode_lengths,wins,draws,losses\n")
         for i in range(len(metrics['total_loss'])):
             f.write(
-                f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics['draws'][i]},{metrics['losses'][i]}\n")
+                f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},"
+                f"{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics['draws'][i]},{metrics['losses'][i]}\n")
+
 
 
 if __name__ == "__main__":

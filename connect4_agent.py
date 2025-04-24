@@ -65,7 +65,7 @@ from monte_carlo import Node
 class Connect4Agent:
     def __init__(self, num_simulations=100, c_puct=1.0):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.network = Connect4Net().to(self.device)
+        self.network = Connect4Net(self.device)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, verbose=True)
         
@@ -231,13 +231,8 @@ class Connect4Agent:
         # value_pred = torch.detach(value_pred)#.cpu().numpy()
         # print(policy_pred, target_policies)
         # Compute losses with L2 regularization
-        print("Target policy sample:", target_policies[0])
-        print("Predicted policy sample:", policy_pred[0])
-        print("Policy pred (first row):", policy_pred[0].detach().cpu().numpy())
-        print("Value pred (first):", value_pred[0].item())
 
         entropy = -torch.sum(policy_pred * torch.log(policy_pred + 1e-8), dim=1).mean()
-        print("Policy entropy:", entropy.item())
 
         policy_loss = -(target_policies * torch.log(policy_pred + 1e-8)).sum(dim=1).mean()
         value_loss = torch.mean((value_pred - target_values) ** 2)
@@ -276,6 +271,6 @@ class Connect4Agent:
     
     def load_model(self, path):
         """Load model weights"""
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, map_location=torch.device("cpu"))
         self.load_state_dict(checkpoint)
 

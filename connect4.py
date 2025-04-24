@@ -106,7 +106,7 @@ pygame.display.set_caption("Connect 4")
 # Load the trained agent
 agent = Connect4Agent(num_simulations=100)
 try:
-    agent.load_model('models/model_latest.pth')
+    agent.load_model('models/moves_hist/model_latest_moveshist.pth')
     print("Loaded trained model successfully!")
 except:
     print("No trained model found, using untrained model")
