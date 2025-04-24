@@ -63,7 +63,8 @@ class Node:
 
             # Apply temporal discount based on distance from end
             moves_to_end = total_moves - node.move_count
-            discounted_value = mult * value * (discount_factor ** moves_to_end)
+            # discounted_value = mult * value * (1.0 + 0.1 * moves_to_end)   
+            discounted_value = mult * value * (0.95 ** moves_to_end)
 
             if is_draw:
                 # For draws, always add 0

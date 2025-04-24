@@ -69,7 +69,7 @@ class Connect4Net(nn.Module):
     def __init__(self, device):
         super(Connect4Net, self).__init__()
         # First conv layer
-        self.conv1 = nn.Conv2d(3, 64, 3, padding=1)  # Changed from 1 to 2 input channels
+        self.conv1 = nn.Conv2d(7, 64, 3, padding=1)  # Changed from 2 to 7 input channels
         self.bnorm1 = nn.BatchNorm2d(64)
 
         # Residual
@@ -95,7 +95,7 @@ class Connect4Net(nn.Module):
 
     def forward(self, x):
         # Shared layers
-        x = x.view(-1, 3, 6, 7)
+        x = x.view(-1, 7, 6, 7)
         x = F.relu(self.bnorm1(self.conv1(x)))
 
         # Residual

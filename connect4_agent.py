@@ -72,31 +72,31 @@ class Connect4Agent:
         self.num_simulations = num_simulations
         self.c_puct = c_puct
         
-    def get_state_tensor(self, board, current_player):
-        """Convert board to tensor state with player information
-        Returns a tensor with 2 channels:
-        - Channel 1: The board state (1 for current player's pieces, -1 for opponent's pieces)
-        - Channel 2: A plane filled with 1s (indicating it's the current player's turn)
-        """
-        # Make board with current player's pieces
-        current_player_tensor = torch.zeros([6, 7], dtype=torch.float32)
-        current_player_tensor[board == current_player] = 1
+    def get_state_tensor(self, board, current_player, move_history=None):
+        # channel 1:
+        current_plane = (board == current_player).astype(np.float32)            # current player board pieces
+        # channel 2:
+        opponent_plane = (board == (3 - current_player)).astype(np.float32)     # opponent player board pieces
 
-        # Make board with opponent player's pieces
-        opp_player_tensor = torch.zeros([6, 7], dtype=torch.float32)
-        opp_player_tensor[board == (3 - current_player)] = 1
+        # player plane (channel 7), indicates which player is currently playing
+        player_plane = np.full((6, 7), float(current_player == 1), dtype=np.float32)
 
-        if current_player == 1:
-            fill = 1
-        else:
-            fill = 0
-        player_tensor = torch.full([6, 7], fill, dtype=torch.float32)
+        # move history channels (channels 3-6, two previous moves for each player)
+        move_planes = [np.zeros((6, 7), dtype=np.float32) for _ in range(4)]
+        if move_history:
+            for idx, (row, col, player) in enumerate(reversed(move_history[-4:])):
+                channel_index = (0 if player == current_player else 2) + idx // 2
+                move_planes[channel_index][row, col] = 1.0
 
-        state_tensor = torch.stack((current_player_tensor, opp_player_tensor, player_tensor), dim=-1)
-        #print("\n\n\nbbbbb", state_tensor.size())
-        return state_tensor.to(self.device)
+        state_tensor = np.stack([
+            current_plane,
+            opponent_plane,
+            *move_planes,  # 4 planes
+            player_plane
+        ])
+        return torch.tensor(state_tensor).to(self.device)
     
-    def search(self, root_state, current_player):
+    def search(self, root_state, current_player, move_history=None):
         """Perform MCTS search starting from root state"""
         root = Node(current_player, root_state.copy(), 0, prior=0)
         
@@ -141,7 +141,7 @@ class Connect4Agent:
                 is_win = True
             else:
                 # Get policy and value from neural network
-                state_tensor = self.get_state_tensor(state, player)
+                state_tensor = self.get_state_tensor(state, player, move_history)
                 with torch.no_grad():
                     policy, value = self.network(state_tensor)
                     policy = policy.cpu().numpy()[0]
@@ -188,9 +188,9 @@ class Connect4Agent:
         """Select child node using PUCT algorithm"""
         return node.get_best_child(self.c_puct)
 
-    def get_action_probs(self, state, current_player, temperature=1.0):
+    def get_action_probs(self, state, current_player, temperature=1.0, move_history=None):
         """Get action probabilities after MCTS search"""
-        root = self.search(state, current_player)
+        root = self.search(state, current_player, move_history=move_history)
         visit_counts = np.array([child.visit_count for child in root.children.values()])
         actions = list(root.children.keys())
         
@@ -223,17 +223,25 @@ class Connect4Agent:
         states = torch.FloatTensor(states).to(self.device)
         target_policies = torch.FloatTensor(policies).to(self.device)
         target_values = torch.FloatTensor(values).to(self.device)
-        print("In from play:", states.shape, target_policies.shape, target_values.shape)
+        # print("In from play:", states.shape, target_policies.shape, target_values.shape)
 
         # Get predictions
         policy_pred, value_pred = self.network(states)
-        policy_pred = torch.detach(policy_pred)#.cpu().numpy()
-        value_pred = torch.detach(value_pred)#.cpu().numpy()
-        print(policy_pred, target_policies)
+        # policy_pred = torch.detach(policy_pred)#.cpu().numpy()
+        # value_pred = torch.detach(value_pred)#.cpu().numpy()
+        # print(policy_pred, target_policies)
         # Compute losses with L2 regularization
-        policy_loss = -torch.sum(target_policies * torch.log(policy_pred + 1e-8)) / batch
+        print("Target policy sample:", target_policies[0])
+        print("Predicted policy sample:", policy_pred[0])
+        print("Policy pred (first row):", policy_pred[0].detach().cpu().numpy())
+        print("Value pred (first):", value_pred[0].item())
 
+        entropy = -torch.sum(policy_pred * torch.log(policy_pred + 1e-8), dim=1).mean()
+        print("Policy entropy:", entropy.item())
+
+        policy_loss = -(target_policies * torch.log(policy_pred + 1e-8)).sum(dim=1).mean()
         value_loss = torch.mean((value_pred - target_values) ** 2)
+
         l2_reg = torch.tensor(0., requires_grad=True)
         for param in self.network.parameters():
             l2_reg = l2_reg + torch.norm(param)

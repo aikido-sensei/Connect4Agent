@@ -10,11 +10,12 @@ from board import *
 from monte_carlo import Node
 
 
-def make_move(agent, board, current_player, game_history, move_count, temperature):
+def make_move(agent, board, current_player, game_history, move_count, temperature, move_history):
+
     # Get current state
     state = board.copy()
     # Get action probabilities from MCTS
-    action_probs = agent.get_action_probs(state, current_player, temperature)
+    action_probs = agent.get_action_probs(state, current_player, temperature, move_history)
 
     # Store state and probabilities
     game_history.append({
@@ -22,7 +23,8 @@ def make_move(agent, board, current_player, game_history, move_count, temperatur
         'current_player': current_player,
         'policy': action_probs,
         'move_number': move_count,
-        'value': 0  # Initialize value to 0
+        'value': 0,
+        'move_history': move_history.copy()
     })
 
     # Select action
@@ -37,6 +39,7 @@ def make_move(agent, board, current_player, game_history, move_count, temperatur
         return True
 
     drop_piece(board, row, action, current_player)
+    move_history.append((row, action, current_player))
 
     # Check if game is over
     game_over = False
@@ -52,12 +55,13 @@ def make_move(agent, board, current_player, game_history, move_count, temperatur
     if game_over:
         # Update values for all positions in the game
         for history in game_history:
+            bonus = 0.05 * history['move_number'] # bonus for long games
             if value == 0:  # Draw
                 history['value'] = 0
             elif history['current_player'] == current_player:
-                history['value'] = value  # Winner gets positive value
+                history['value'] = value + bonus # Winner gets positive value
             else:
-                history['value'] = -value  # Loser gets negative of winner's value
+                history['value'] = -value - bonus # Loser gets negative of winner's value
     return game_over
 
 
@@ -65,31 +69,33 @@ def play_self_play_game(agent, temperature=1.0):
     """Play a self-play game and return game history"""
     board = create_board()
     game_history = []
-    current_player = random.choice([1, 2])  # Randomly choose starting player
+    move_history = []  # track past moves
+    current_player = random.choice([1, 2])  # randomly choose starting player
     move_count = 0
 
     while True:
         move_count += 1
-        over = make_move(agent, board, current_player, game_history, move_count, temperature)
+        over = make_move(agent, board, current_player, game_history, move_count, temperature, move_history)
         if over:
             return game_history
-        current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
+        current_player = change_players(current_player)
 
 
 def play_game(agent1, agent2, temperature=1.0):
     """Play a game between two agents"""
     board = create_board()
     game_history = []
-    current_player = random.choice([1, 2])  # Randomly choose starting player
+    move_history = []  # track past moves
+    current_player = random.choice([1, 2])
     move_count = 0
 
     while True:
         move_count += 1
         current_agent = agent1 if current_player == 1 else agent2
-        over = make_move(current_agent, board, current_player, game_history, move_count, temperature)
+        over = make_move(current_agent, board, current_player, game_history, move_count, temperature, move_history)
         if over:
             return game_history
-        current_player = change_players(current_player)  # Switch players (1 -> 2 or 2 -> 1)
+        current_player = change_players(current_player)
 
 
 def train_network(agent, game_histories, batch_size=32):
@@ -106,10 +112,12 @@ def train_network(agent, game_histories, batch_size=32):
         return None
 
     # Sort by absolute value to prioritize decisive positions
-    training_data.sort(key=lambda x: abs(x['value']), reverse=True)
+    # training_data.sort(key=lambda x: abs(x['value']), reverse=True)
+    # Prioritize longer games
+    training_data.sort(key=lambda x: x['move_number'], reverse=True)
 
-    # Take top 75% of positions
-    training_data = training_data[:int(len(training_data) * 0.75)]
+    # Take top 75% of positions -> changed to top 90%
+    training_data = training_data[:int(len(training_data) * 0.90)]
 
     # Sample batch from remaining good positions
     batch = random.sample(training_data, min(batch_size, len(training_data)))
@@ -118,15 +126,14 @@ def train_network(agent, game_histories, batch_size=32):
     states = []
     for history in batch:
         board_tensor = history['state']
-        # player_plane = np.full_like(board_tensor, float(history['current_player'] == 1))
-        # state = np.stack([board_tensor, player_plane])  # Stack along channel dimension
-        states.append(agent.get_state_tensor(board_tensor, history['current_player']).cpu().numpy())
+        move_hist = history['move_history']  # <- get move history
+        states.append(agent.get_state_tensor(board_tensor, history['current_player'], move_hist).cpu().numpy())
 
     states = np.array(states)
     policies = np.array([history['policy'] for history in batch])
     values = np.array([history['value'] for history in batch])
     values = values.reshape(-1, 1)
-    print(states.shape, policies.shape, values.shape)
+    # print(states.shape, policies.shape, values.shape)
     # Train network
     return agent.train(states, policies, values, batch_size)
 
@@ -136,7 +143,7 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
     current_agent = Connect4Agent(num_simulations=sims, c_puct=2.0)  # More simulations and higher exploration
 
     # Pool of previous best models (max size 5)
-    model_pool = []
+    model_pool = []     # stores tuples: (avg_loss, state_dict) to sort models in pool by performance
     pool_size = 5
 
     # Training metrics
@@ -190,7 +197,8 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
             if model_pool and random.random() < 0.70:
                 # Create opponent agent and load random previous model
                 opponent = Connect4Agent(num_simulations=sims, c_puct=2.0)  # Same settings for opponent
-                opponent_state = random.choice(model_pool)
+                # opponent_state = random.choice(model_pool)
+                opponent_state = model_pool[0][1] # select current best model in the pool, new
                 opponent.load_state_dict(opponent_state)
                 game_history = play_game(current_agent, opponent, temp)
             else:
@@ -253,10 +261,15 @@ def train_agent(num_iterations=100, num_episodes=100, num_epochs=10, batch_size=
             if avg_loss < best_loss:
                 best_loss = avg_loss
                 # Add current model state to pool
-                model_pool.append(current_agent.state_dict())
+                # model_pool.append(current_agent.state_dict())
+                model_pool.append((avg_loss, current_agent.state_dict())) # new
                 # Keep only the last pool_size models
-                if len(model_pool) > pool_size:
-                    model_pool.pop(0)  # Remove oldest model
+                #if len(model_pool) > pool_size:
+                #    model_pool.pop(0)  # Remove oldest model
+
+                # Sort and keep only the top-N best performing models, new
+                model_pool.sort(key=lambda x: x[0])  # Sort by loss, new
+                model_pool = model_pool[:pool_size]  # new
                 print(f"\nModel added to pool (pool size: {len(model_pool)})")
 
     # Save only the final model
@@ -306,7 +319,7 @@ def save_metrics(metrics, i):
         f.write("total_loss,policy_loss,value_loss,episode_lengths,wins,draws,losses\n")
         for i in range(len(metrics['total_loss'])):
             f.write(
-                f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics["draws"][i]},{metrics["losses"][i]}\n")
+                f"{metrics['total_loss'][i]},{metrics['policy_loss'][i]},{metrics['value_loss'][i]},{metrics['episode_lengths'][i]},{metrics['wins'][i]},{metrics['draws'][i]},{metrics['losses'][i]}\n")
 
 
 if __name__ == "__main__":
