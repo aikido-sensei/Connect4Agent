@@ -63,20 +63,20 @@ def draw_menu():
     screen.blit(title, (width // 2 - title.get_width() // 2, 50))
 
     # Draw buttons
-    human_button = pygame.Rect(width // 2 - 150, 200, 300, 80)
-    agent_button = pygame.Rect(width // 2 - 150, 350, 300, 80)
+    player1_button = pygame.Rect(width // 2 - 150, 200, 300, 80)
+    player2_button = pygame.Rect(width // 2 - 150, 350, 300, 80)
 
-    pygame.draw.rect(screen, GRAY, human_button)
-    pygame.draw.rect(screen, GRAY, agent_button)
+    pygame.draw.rect(screen, GRAY, player1_button)
+    pygame.draw.rect(screen, GRAY, player2_button)
 
-    human_text = menu_font.render("VS HUMAN", 1, WHITE)
-    agent_text = menu_font.render("VS AGENT", 1, WHITE)
+    player1_text = menu_font.render("AGENT = P1", 1, WHITE)
+    player2_text = menu_font.render("AGENT = P2", 1, WHITE)
 
-    screen.blit(human_text, (width // 2 - human_text.get_width() // 2, 220))
-    screen.blit(agent_text, (width // 2 - agent_text.get_width() // 2, 370))
+    screen.blit(player1_text, (width // 2 - player1_text.get_width() // 2, 220))
+    screen.blit(player2_text, (width // 2 - player2_text.get_width() // 2, 370))
 
     pygame.display.update()
-    return human_button, agent_button
+    return player1_button, player2_button
 
 
 def draw_game_over(winner, board):
@@ -132,38 +132,41 @@ game_over = False
 turn = 0
 winner = 0
 vs_agent = False
+agent_turn = 0
 
 # Main game loop
 while True:
     if game_state == MENU:
         screen.fill(BLACK)
-        human_button, agent_button = draw_menu()
+        player1_button, player2_button = draw_menu()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
                 pos = pygame.mouse.get_pos()
-                if human_button.collidepoint(pos):
+                if player1_button.collidepoint(pos):
                     game_state = PLAYING
                     vs_agent = False
                     board = create_board()
                     game_over = False
+                    agent_turn = 0
                     turn = 0
                     screen.fill(BLACK)
                     draw_board(board)
-                elif agent_button.collidepoint(pos):
+                elif player2_button.collidepoint(pos):
                     game_state = PLAYING
                     vs_agent = True
                     board = create_board()
                     game_over = False
+                    agent_turn = 1
                     turn = 0
                     screen.fill(BLACK)
                     draw_board(board)
 
     elif game_state == PLAYING:
         # Handle agent's turn if playing against agent
-        if vs_agent and turn == 0:
+        if turn == agent_turn:
             pygame.time.wait(500)  # Fixed 500ms delay for better UX
 
             # Get agent's move using MCTS
@@ -179,11 +182,11 @@ while True:
                     continue
 
             row = get_next_open_row(board, col)
-            drop_piece(board, row, col, 1)
+            drop_piece(board, row, col, agent_turn + 1)
 
             # Check for win
-            if winning_move(board, 1):
-                winner = 1
+            if winning_move(board, agent_turn + 1):
+                winner = agent_turn + 1
                 game_state = GAME_OVER
             elif len([col for col in range(7) if is_valid_location(board, col)]) == 0:
                 winner = 0
@@ -224,7 +227,7 @@ while True:
                 if row == -1:
                     continue
 
-                piece = 1 if turn == 0 else 2
+                piece = turn + 1
                 drop_piece(board, row, col, piece)
 
                 if winning_move(board, piece):
